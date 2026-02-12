@@ -24,23 +24,44 @@ st.set_page_config(
 st.markdown("""
 <style>
 
-/* Main background */
+/* ===== Main App Background ===== */
 .stApp {
     background: linear-gradient(135deg, #0f172a, #1e293b);
     color: white;
 }
 
-/* Titles */
-.main-title {
-    font-size:42px;
-    font-weight:800;
-    color:white;
+/* ===== Sidebar Styling ===== */
+section[data-testid="stSidebar"] {
+    background-color: #111827 !important;
+    color: white !important;
 }
 
-/* Labels fix */
-label, .stSelectbox label, .stTextInput label, .stSlider label {
+/* Sidebar text */
+section[data-testid="stSidebar"] label,
+section[data-testid="stSidebar"] span,
+section[data-testid="stSidebar"] p {
+    color: white !important;
+}
+
+/* Sidebar inputs */
+section[data-testid="stSidebar"] input {
+    background-color: #1f2937 !important;
+    color: white !important;
+    border-radius: 8px;
+}
+
+/* ===== Main Content Labels ===== */
+label {
     color: white !important;
     font-weight: 500;
+}
+
+/* Input fields main area */
+.stTextInput input,
+.stTextArea textarea {
+    background-color: #f8fafc !important;
+    color: black !important;
+    border-radius: 8px;
 }
 
 /* Slider text */
@@ -48,23 +69,19 @@ label, .stSelectbox label, .stTextInput label, .stSlider label {
     color: white !important;
 }
 
-/* Input boxes */
-input, textarea {
-    background-color: #f8fafc !important;
-    color: black !important;
-}
-
-/* Button styling */
+/* Button Styling */
 .stButton>button {
     background: linear-gradient(90deg, #6366f1, #3b82f6);
     color: white;
     border-radius: 10px;
     height: 3em;
     font-weight: 600;
+    border: none;
 }
 
 </style>
 """, unsafe_allow_html=True)
+
 
 # ================= HEADER =================
 st.markdown('<div class="main-title">🚀 FutureProof AI Career Intelligence Engine</div>', unsafe_allow_html=True)

@@ -1,6 +1,6 @@
 # ==========================================================
-# FUTUREPROOF AI – Career Intelligence Engine (2026)
-# Premium Production Version with Admin Monitoring
+# FUTUREPROOF AI – Career Intelligence Engine (2026 Edition)
+# Premium Production Version
 # ==========================================================
 
 import streamlit as st
@@ -27,87 +27,96 @@ st.set_page_config(
 )
 
 # ==========================================================
-# AI BACKGROUND + PREMIUM UI
+# PREMIUM UI DESIGN
 # ==========================================================
 
 st.markdown("""
 <style>
 
+/* Background Gradient */
 .stApp {
-    background-image: url("https://images.unsplash.com/photo-1677442136019-21780ecad995");
-    background-size: cover;
-    background-attachment: fixed;
+    background: linear-gradient(135deg, #0f172a 0%, #111827 40%, #1e293b 100%);
+    color: white;
 }
 
+/* Glass container */
+.block-container {
+    background: rgba(255,255,255,0.05);
+    padding: 40px;
+    border-radius: 20px;
+    backdrop-filter: blur(12px);
+    box-shadow: 0px 10px 40px rgba(0,0,0,0.4);
+}
+
+/* Header */
 .main-title {
-    font-size:48px;
-    font-weight:900;
-    background: linear-gradient(90deg,#4f46e5,#06b6d4);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    font-size:42px;
+    font-weight:800;
+    text-align:center;
+    margin-bottom:10px;
 }
 
-.glass-card {
-    background: rgba(255,255,255,0.85);
-    padding:20px;
-    border-radius:15px;
-    backdrop-filter: blur(10px);
-    box-shadow:0 8px 20px rgba(0,0,0,0.1);
-    margin-bottom:20px;
-}
-
-.admin-box {
-    background:#111827;
-    padding:15px;
-    border-radius:12px;
+/* Buttons */
+.stButton>button {
+    background: linear-gradient(90deg,#6366f1,#3b82f6);
     color:white;
+    border-radius:12px;
+    height:50px;
+    font-size:16px;
+    font-weight:600;
+    transition: all 0.3s ease;
+}
+
+.stButton>button:hover {
+    transform: scale(1.02);
+    box-shadow: 0px 6px 20px rgba(99,102,241,0.5);
+}
+
+/* Inputs */
+input, textarea {
+    background-color: rgba(255,255,255,0.08) !important;
+    color: white !important;
 }
 
 </style>
 """, unsafe_allow_html=True)
 
-# ==========================================================
-# HEADER
-# ==========================================================
-
-st.markdown('<div class="main-title">🚀 FutureProof AI Career Intelligence</div>', unsafe_allow_html=True)
-st.caption("AI-Powered Career Growth Planning Engine (2026 Edition)")
+st.markdown('<div class="main-title">🚀 FutureProof AI Career Intelligence Engine</div>', unsafe_allow_html=True)
+st.caption("Plan Your 2026 Career Growth Intelligently")
 
 # ==========================================================
-# LOAD ENV VARIABLES
+# ENVIRONMENT VARIABLES
 # ==========================================================
 
-api_key = os.getenv("GOOGLE_API_KEY")
-admin_email = os.getenv("ADMIN_EMAIL")
-admin_password = os.getenv("ADMIN_APP_PASSWORD")
+API_KEY = os.getenv("GOOGLE_API_KEY")
 
-if not api_key:
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")        # your email
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")  # app password
+
+if not API_KEY:
     st.error("❌ GOOGLE_API_KEY not found.")
     st.stop()
 
-client = genai.Client(api_key=api_key)
-
-DATASET_CONFIDENCE_THRESHOLD = 0.55
-GEMINI_MODEL = "gemini-2.5-flash"
+client = genai.Client(api_key=API_KEY)
 
 # ==========================================================
-# EMAIL ALERT SYSTEM
+# EMAIL ALERT FUNCTION (ADMIN NOTIFICATION)
 # ==========================================================
 
 def send_admin_alert(error_message):
-    if not admin_email or not admin_password:
+    if not ADMIN_EMAIL or not EMAIL_PASSWORD:
         return
-
+    
     try:
-        msg = MIMEText(f"🚨 FutureProof AI Alert\n\nError:\n{error_message}")
-        msg["Subject"] = "FutureProof AI - API Failure Alert"
-        msg["From"] = admin_email
-        msg["To"] = admin_email
+        msg = MIMEText(f"FutureProof AI Alert:\n\n{error_message}")
+        msg["Subject"] = "⚠ FutureProof AI API Failure Alert"
+        msg["From"] = ADMIN_EMAIL
+        msg["To"] = ADMIN_EMAIL
 
         server = smtplib.SMTP("smtp.gmail.com", 587)
         server.starttls()
-        server.login(admin_email, admin_password)
-        server.sendmail(admin_email, admin_email, msg.as_string())
+        server.login(ADMIN_EMAIL, EMAIL_PASSWORD)
+        server.sendmail(ADMIN_EMAIL, ADMIN_EMAIL, msg.as_string())
         server.quit()
     except:
         pass
@@ -123,7 +132,7 @@ def load_model():
 embed_model = load_model()
 
 # ==========================================================
-# LOAD DATASET
+# LOAD DATA
 # ==========================================================
 
 @st.cache_data
@@ -136,34 +145,32 @@ def load_data():
 
 df = load_data()
 
+DATASET_THRESHOLD = 0.55
+MODEL_NAME = "gemini-2.5-flash"
+
 # ==========================================================
-# GEMINI FUNCTION WITH ALERT
+# GEMINI CALL
 # ==========================================================
 
 def gemini_generate(prompt):
     try:
         response = client.models.generate_content(
-            model=GEMINI_MODEL,
+            model=MODEL_NAME,
             contents=prompt
         )
-
-        if not response or not response.text:
-            send_admin_alert("Gemini returned empty response.")
-            return None
-
-        return response.text.strip()
-
+        if response and response.text:
+            return response.text.strip()
+        return None
     except Exception as e:
         send_admin_alert(str(e))
         return None
 
 # ==========================================================
-# INTELLIGENCE ENGINE
+# AI LOGIC
 # ==========================================================
 
 def dataset_confidence(user_skills):
     user_emb = embed_model.encode(" ".join(user_skills), convert_to_tensor=True)
-
     fields = df["interested_future_field"].unique().tolist()
     profiles = []
 
@@ -179,128 +186,134 @@ def dataset_confidence(user_skills):
 
 def infer_role(skills):
     prompt = f"""
-Suggest ONE high-growth 2026 job role for skills:
+Suggest ONE high-growth career role in 2026 for someone with:
 {", ".join(skills)}
 Return only role name.
 """
-    return gemini_generate(prompt) or "Business Transformation Specialist"
+    role = gemini_generate(prompt)
+    return role if role else "Business Transformation Specialist"
 
-def infer_growth(role, skills):
+def infer_growth(role):
     prompt = f"""
-For {role}, suggest 6 future growth skills.
-Return comma-separated only.
+For {role}, list 6 future growth skills for 2026.
+Return comma-separated names only.
 """
-    response = gemini_generate(prompt)
-    if not response:
+    result = gemini_generate(prompt)
+    if not result:
         return []
-    raw = re.split(r",|\n", response)
-    return [s.strip().title() for s in raw if s.strip()][:6]
+    return [s.strip().title() for s in re.split(r",|\n", result)][:6]
 
 def infer_certifications(role):
     prompt = f"""
-Suggest 5 trending global certifications in 2026 for {role}.
-Return comma-separated only.
+List 5 trending certifications for {role} in 2026.
+Return comma-separated names only.
 """
-    response = gemini_generate(prompt)
-    if not response:
+    result = gemini_generate(prompt)
+    if not result:
         return []
-    return [c.strip() for c in response.split(",")][:5]
+    return [c.strip() for c in result.split(",")][:5]
 
 # ==========================================================
-# USER INPUT SECTION
+# USER INPUT
 # ==========================================================
 
-st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+st.markdown("### 👤 Your Profile")
 
 col1, col2 = st.columns(2)
 
 with col1:
-    name = st.text_input("👤 Name")
+    name = st.text_input("Name")
 
 with col2:
     education = st.selectbox(
-        "🎓 Education Level",
+        "Education Level",
         ["High School", "Diploma", "Graduation", "Post Graduation", "Other"]
     )
 
-skills_input = st.text_input("💡 Current Skills (comma-separated)")
-hours = st.slider("⏳ Weekly Learning Hours", 1, 40, 10)
-
-st.markdown('</div>', unsafe_allow_html=True)
+skills_input = st.text_input("Current Skills (comma-separated)")
+hours = st.slider("Weekly Learning Hours Available", 1, 40, 10)
 
 # ==========================================================
-# GENERATE BUTTON
+# GENERATE REPORT
 # ==========================================================
 
-if st.button("🚀 Generate Career Intelligence Report", use_container_width=True):
+if st.button("🔎 Generate Career Intelligence Plan", use_container_width=True):
 
     if not name or not skills_input:
-        st.warning("Please enter required details.")
+        st.warning("Please enter your name and skills.")
     else:
-
         skills = [s.strip().lower() for s in skills_input.split(",") if s.strip()]
 
-        with st.spinner("Analyzing AI market signals..."):
-
+        with st.spinner("Analyzing market intelligence..."):
             confidence, dataset_field = dataset_confidence(skills)
 
-            if confidence >= DATASET_CONFIDENCE_THRESHOLD:
+            if confidence >= DATASET_THRESHOLD:
                 role = dataset_field.title()
                 source = "Peer Intelligence"
             else:
                 role = infer_role(skills)
-                source = "Live AI Market Intelligence"
+                source = "Live Market AI Intelligence"
 
-            growth = infer_growth(role, skills)
-            certs = infer_certifications(role)
+            growth_skills = infer_growth(role)
+            certifications = infer_certifications(role)
 
-            weeks = round((len(growth) * 40) / hours) if hours > 0 else 0
+            weeks = round((len(growth_skills) * 40) / hours)
 
-        st.success("Career Intelligence Report Ready!")
+        st.success("✅ Career Intelligence Report Ready!")
 
-        tab1, tab2, tab3 = st.tabs(["🎯 Overview", "📈 Growth Plan", "🎓 Certifications"])
+        tab1, tab2, tab3, tab4 = st.tabs(
+            ["🎯 Overview", "📈 Growth Roadmap", "🎓 Certifications", "📊 Skill Insights"]
+        )
 
+        # TAB 1
         with tab1:
             colA, colB, colC = st.columns(3)
+
             colA.metric("Recommended Role", role)
             colB.metric("Confidence", f"{int(confidence*100)}%")
             colC.metric("Market Demand", f"{np.random.randint(75,95)}%")
+
             st.progress(int(confidence*100))
-            st.caption(f"Source: {source}")
+            st.markdown(f"**Insight Source:** {source}")
 
+        # TAB 2
         with tab2:
-            st.subheader("Future Growth Areas")
-            for g in growth:
-                st.write("✔️", g)
+            for skill in growth_skills:
+                st.markdown(f"✔ {skill}")
 
-            st.info(f"Estimated Upskilling Timeline: ~{weeks} weeks")
+            st.markdown(f"### ⏳ Estimated Upskilling Time: ~{weeks} weeks")
 
+        # TAB 3
         with tab3:
-            st.subheader("Trending Certifications")
-            for c in certs:
-                st.write("🏅", c)
+            for cert in certifications:
+                st.markdown(f"🏅 {cert}")
 
-# ==========================================================
-# FEEDBACK SECTION
-# ==========================================================
+        # TAB 4
+        with tab4:
+            colX, colY = st.columns(2)
 
-st.divider()
-st.subheader("💬 Feedback")
+            with colX:
+                st.markdown("### Your Skills")
+                for s in skills:
+                    st.markdown(f"- {s.title()}")
 
-rating = st.slider("How useful was this report?", 1, 5, 4)
-feedback = st.text_area("Suggestions for improvement")
+            with colY:
+                st.markdown("### Growth Areas")
+                for s in growth_skills[:4]:
+                    st.markdown(f"- {s}")
 
-if st.button("Submit Feedback"):
-    with open("feedback_log.txt", "a") as f:
-        f.write(f"\n{name} | Rating:{rating} | {feedback}")
-    st.success("Thank you for your feedback!")
+        # ======================================================
+        # FEEDBACK
+        # ======================================================
 
-# ==========================================================
-# ADMIN PANEL
-# ==========================================================
+        st.divider()
+        st.markdown("## 💬 Help Us Improve")
 
-if st.sidebar.checkbox("🔐 Admin Panel"):
-    st.sidebar.markdown('<div class="admin-box">', unsafe_allow_html=True)
-    st.sidebar.write("API Loaded:", "Yes" if api_key else "No")
-    st.sidebar.write("Model:", GEMINI_MODEL)
-    st.sidebar.markdown('</div>', unsafe_allow_html=True)
+        rating = st.slider("How useful was this plan?", 1, 5, 4)
+        recommend = st.selectbox("Would you recommend this tool?", ["Yes", "Maybe", "No"])
+        feedback = st.text_area("Suggestions")
+
+        if st.button("Submit Feedback"):
+            with open("feedback_log.txt", "a") as f:
+                f.write(f"\n{name} | {rating} | {recommend} | {feedback}")
+            st.success("🙏 Thank you for your feedback!")

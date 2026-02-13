@@ -8,8 +8,14 @@ import numpy as np
 import re
 import os
 import warnings
+import json
+from datetime import datetime
 from sentence_transformers import SentenceTransformer, util
 from google import genai
+
+# Google Sheet
+import gspread
+from google.oauth2.service_account import Credentials
 
 warnings.filterwarnings("ignore")
 
@@ -23,53 +29,15 @@ st.set_page_config(
 # ================= PROFESSIONAL UI THEME =================
 st.markdown("""
 <style>
-
-/* ===== Main App Background ===== */
 .stApp {
     background: linear-gradient(135deg, #0f172a, #1e293b);
     color: white;
 }
-
-/* ===== Sidebar Styling ===== */
 section[data-testid="stSidebar"] {
     background-color: #111827 !important;
     color: white !important;
 }
-
-/* Sidebar text */
-section[data-testid="stSidebar"] label,
-section[data-testid="stSidebar"] span,
-section[data-testid="stSidebar"] p {
-    color: white !important;
-}
-
-/* Sidebar inputs */
-section[data-testid="stSidebar"] input {
-    background-color: #1f2937 !important;
-    color: white !important;
-    border-radius: 8px;
-}
-
-/* ===== Main Content Labels ===== */
-label {
-    color: white !important;
-    font-weight: 500;
-}
-
-/* Input fields main area */
-.stTextInput input,
-.stTextArea textarea {
-    background-color: #f8fafc !important;
-    color: black !important;
-    border-radius: 8px;
-}
-
-/* Slider text */
-.stSlider span {
-    color: white !important;
-}
-
-/* Button Styling */
+label { color: white !important; font-weight: 500; }
 .stButton>button {
     background: linear-gradient(90deg, #6366f1, #3b82f6);
     color: white;
@@ -78,10 +46,8 @@ label {
     font-weight: 600;
     border: none;
 }
-
 </style>
 """, unsafe_allow_html=True)
-
 
 # ================= HEADER =================
 st.markdown('<div class="main-title">🚀 FutureProof AI Career Intelligence Engine</div>', unsafe_allow_html=True)
@@ -96,7 +62,6 @@ if "admin_logged" not in st.session_state:
 
 with st.sidebar:
     st.markdown("## 🔐 Admin Access")
-
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
 
@@ -116,6 +81,12 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 GEMINI_MODEL = "gemini-2.5-flash"
+
+# ================= API USAGE LOGGER =================
+def log_api_usage(event_type, status):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open("api_usage_log.txt", "a") as f:
+        f.write(f"{timestamp} | {event_type} | {status}\n")
 
 # ================= LOAD MODELS =================
 @st.cache_resource
@@ -142,11 +113,42 @@ def gemini_generate(prompt):
             model=GEMINI_MODEL,
             contents=prompt
         )
+
         if response and response.text:
+            log_api_usage("Gemini Call", "SUCCESS")
             return response.text.strip()
+
+        log_api_usage("Gemini Call", "EMPTY RESPONSE")
         return None
-    except Exception:
+
+    except Exception as e:
+        log_api_usage("Gemini Call", f"FAILED: {str(e)}")
         return None
+
+# ================= GOOGLE SHEET SAVE =================
+def save_feedback_to_sheet(data_row):
+    try:
+        creds_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+        if not creds_json:
+            return
+
+        creds_dict = json.loads(creds_json)
+
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+
+        credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+        client_gs = gspread.authorize(credentials)
+
+        sheet = client_gs.open("FutureProof_AI_Feedback").sheet1
+        sheet.append_row(data_row)
+
+        log_api_usage("GoogleSheet Save", "SUCCESS")
+
+    except Exception as e:
+        log_api_usage("GoogleSheet Save", f"FAILED: {str(e)}")
 
 # ================= CONFIDENCE LOGIC =================
 def dataset_confidence(user_skills):
@@ -278,8 +280,30 @@ if st.button("🔎 Generate Career Intelligence Plan", use_container_width=True)
         feedback_text = st.text_area("What can we improve?")
 
         if st.button("Submit Feedback"):
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            feedback_entry = (
+                f"{timestamp} | Name:{name} | "
+                f"Rating:{rating} | "
+                f"Education:{education} | "
+                f"Skills:{skills_input} | "
+                f"Feedback:{feedback_text}\n"
+            )
+
+            # Save locally
             with open("feedback_log.txt", "a") as f:
-                f.write(f"\n{name} | Rating:{rating} | {feedback_text}")
+                f.write(feedback_entry)
+
+            # Save to Google Sheet
+            save_feedback_to_sheet([
+                timestamp,
+                name,
+                rating,
+                education,
+                skills_input,
+                feedback_text
+            ])
+
             st.success("Thank you for feedback!")
 
 # ================= ADMIN DASHBOARD =================

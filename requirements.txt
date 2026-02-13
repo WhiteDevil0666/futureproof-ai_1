@@ -1,9 +1,9 @@
-streamlit==1.54.0
-pandas==2.3.3
-numpy==2.4.2
-sentence-transformers==5.2.2
-torch==2.10.0
-google-genai==1.63.0
-gspread==6.1.2
-google-auth==2.48.0
+streamlit
+pandas
+numpy
+sentence-transformers
+torch
+google-genai
+gspread
+google-auth
 python-dotenv

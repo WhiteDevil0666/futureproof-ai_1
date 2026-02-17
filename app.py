@@ -1,5 +1,6 @@
 # ==========================================================
 # FUTUREPROOF AI – Career Intelligence Engine (Admin Edition)
+# Dynamic Domain-Specific Version
 # ==========================================================
 
 import streamlit as st
@@ -26,7 +27,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# ================= PROFESSIONAL UI THEME =================
+# ================= UI THEME =================
 st.markdown("""
 <style>
 .stApp {
@@ -53,7 +54,7 @@ label { color: white !important; font-weight: 500; }
 st.markdown('<div class="main-title">🚀 FutureProof AI Career Intelligence Engine</div>', unsafe_allow_html=True)
 st.caption("Plan Your 2026 Career Growth Intelligently")
 
-# ================= ADMIN LOGIN SYSTEM =================
+# ================= ADMIN LOGIN =================
 ADMIN_USERNAME = os.getenv("ADMIN_USER")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASS")
 
@@ -74,7 +75,6 @@ with st.sidebar:
 
 # ================= LOAD API KEY =================
 api_key = os.getenv("GOOGLE_API_KEY")
-
 if not api_key:
     st.error("❌ GOOGLE_API_KEY not found.")
     st.stop()
@@ -113,23 +113,54 @@ def gemini_generate(prompt):
             model=GEMINI_MODEL,
             contents=prompt
         )
-
         if response and response.text:
             log_api_usage("Gemini Call", "SUCCESS")
             return response.text.strip()
 
-        log_api_usage("Gemini Call", "EMPTY RESPONSE")
+        log_api_usage("Gemini Call", "EMPTY")
         return None
 
     except Exception as e:
         log_api_usage("Gemini Call", f"FAILED: {str(e)}")
         return None
 
+# ==========================================================
+# ================= DYNAMIC DOMAIN DETECTION =================
+# ==========================================================
+
+def detect_domain(skills):
+    prompt = f"""
+You are an expert technology domain classifier.
+
+Based on these skills:
+{", ".join(skills)}
+
+Identify the PRIMARY technology domain.
+
+Rules:
+- Return ONLY one domain name.
+- Keep it concise (max 4 words).
+- Must strictly reflect given skills.
+- Do NOT invent futuristic titles.
+
+Examples:
+Python, ML → Data Science & AI
+SAP, S4HANA → SAP & Enterprise Systems
+Cybersecurity, SOC → Cybersecurity
+AWS, DevOps → Cloud & DevOps
+
+Return only the domain name.
+"""
+
+    domain = gemini_generate(prompt)
+    return domain if domain else "Technology Domain"
+
 # ================= GOOGLE SHEET SAVE =================
 def save_feedback_to_sheet(data_row):
     try:
         creds_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
         if not creds_json:
+            log_api_usage("GoogleSheet Save", "NO_CREDENTIALS")
             return
 
         creds_dict = json.loads(creds_json)
@@ -150,40 +181,41 @@ def save_feedback_to_sheet(data_row):
     except Exception as e:
         log_api_usage("GoogleSheet Save", f"FAILED: {str(e)}")
 
-# ================= CONFIDENCE LOGIC =================
-def dataset_confidence(user_skills):
-    user_emb = embed_model.encode(" ".join(user_skills), convert_to_tensor=True)
+# ==========================================================
+# ================= ROLE & GROWTH LOGIC =================
+# ==========================================================
 
-    fields = df["interested_future_field"].unique().tolist()
-    profiles = []
-
-    for f in fields:
-        skills = ",".join(df[df["interested_future_field"] == f]["current_skills"])
-        profiles.append(skills[:500])
-
-    field_embs = embed_model.encode(profiles, convert_to_tensor=True)
-    scores = util.cos_sim(user_emb, field_embs)[0]
-
-    best_idx = scores.argmax()
-    return float(scores[best_idx]), fields[best_idx]
-
-# ================= ROLE INFERENCE =================
 def infer_career_role(skills):
-    prompt = f"""
-Suggest ONE high-growth future job role in 2026 
-for someone with these skills:
-{", ".join(skills)}
-Return ONLY the role name.
-"""
-    role = gemini_generate(prompt)
-    return role if role else "Business Transformation Specialist"
+    domain = detect_domain(skills)
 
-# ================= UPSKILLING =================
-def infer_growth_plan(role, skills):
     prompt = f"""
-For the role {role}, suggest 6 high-impact skills in 2026.
+User Domain: {domain}
+User Skills: {", ".join(skills)}
+
+Suggest ONE advanced career role strictly inside this domain.
+
+Rules:
+- Do NOT switch domain.
+- Must align with skills.
+- Keep it realistic for 2026.
+- Return only the role name.
+"""
+
+    role = gemini_generate(prompt)
+    return role if role else f"Senior {domain} Specialist"
+
+
+def infer_growth_plan(role, skills):
+    domain = detect_domain(skills)
+
+    prompt = f"""
+Role: {role}
+Domain: {domain}
+
+Suggest 6 high-impact growth skills strictly within this domain.
 Return comma-separated names only.
 """
+
     response = gemini_generate(prompt)
     if not response:
         return []
@@ -191,18 +223,28 @@ Return comma-separated names only.
     raw = re.split(r",|\n", response)
     return [s.strip().title() for s in raw if s.strip()][:6]
 
-# ================= CERTIFICATIONS =================
-def infer_certifications(role):
+
+def infer_certifications(role, skills):
+    domain = detect_domain(skills)
+
     prompt = f"""
-Suggest 5 trending global certifications in 2026 for {role}.
-Return comma-separated certification names only.
+Role: {role}
+Domain: {domain}
+
+Suggest 5 globally recognized certifications strictly for this domain.
+Return comma-separated names only.
 """
+
     response = gemini_generate(prompt)
     if not response:
         return []
+
     return [c.strip() for c in response.split(",")][:5]
 
+# ==========================================================
 # ================= USER INPUT =================
+# ==========================================================
+
 st.markdown("### 👤 Your Profile")
 
 col1, col2 = st.columns(2)
@@ -219,7 +261,10 @@ with col2:
 skills_input = st.text_input("Current Skills (comma-separated)")
 hours = st.slider("Weekly Learning Hours Available", 1, 40, 10)
 
+# ==========================================================
 # ================= GENERATE =================
+# ==========================================================
+
 if st.button("🔎 Generate Career Intelligence Plan", use_container_width=True):
 
     if not name or not skills_input:
@@ -228,18 +273,11 @@ if st.button("🔎 Generate Career Intelligence Plan", use_container_width=True)
 
         skills = [s.strip().lower() for s in skills_input.split(",") if s.strip()]
 
-        with st.spinner("Analyzing market signals..."):
-            confidence, dataset_field = dataset_confidence(skills)
+        with st.spinner("Analyzing your domain and future opportunities..."):
 
-            if confidence >= 0.55:
-                role = dataset_field.title()
-                source = "Peer Career Intelligence"
-            else:
-                role = infer_career_role(skills)
-                source = "Live Market AI Intelligence"
-
+            role = infer_career_role(skills)
             growth_skills = infer_growth_plan(role, skills)
-            certifications = infer_certifications(role)
+            certifications = infer_certifications(role, skills)
             weeks = round((len(growth_skills) * 40) / hours)
 
         st.success("✅ Career Intelligence Report Ready!")
@@ -249,12 +287,8 @@ if st.button("🔎 Generate Career Intelligence Plan", use_container_width=True)
         )
 
         with tab1:
-            colA, colB, colC = st.columns(3)
-            colA.metric("🎯 Recommended Role", role)
-            colB.metric("📊 Confidence", f"{int(confidence*100)}%")
-            colC.metric("📈 Market Demand Score", f"{np.random.randint(75,95)}%")
-            st.progress(int(confidence*100))
-            st.markdown(f"**Insight Source:** {source}")
+            st.metric("🎯 Recommended Role", role)
+            st.metric("📈 Market Demand Score", f"{np.random.randint(75,95)}%")
 
         with tab2:
             for skill in growth_skills:
@@ -266,13 +300,9 @@ if st.button("🔎 Generate Career Intelligence Plan", use_container_width=True)
                 st.markdown(f"🏅 {cert}")
 
         with tab4:
-            colX, colY = st.columns(2)
-            with colX:
-                for s in skills:
-                    st.markdown(f"- {s.title()}")
-            with colY:
-                for s in growth_skills[:4]:
-                    st.markdown(f"- {s}")
+            st.markdown("### Your Skills")
+            for s in skills:
+                st.markdown(f"- {s.title()}")
 
         st.divider()
 
@@ -282,19 +312,11 @@ if st.button("🔎 Generate Career Intelligence Plan", use_container_width=True)
         if st.button("Submit Feedback"):
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            feedback_entry = (
-                f"{timestamp} | Name:{name} | "
-                f"Rating:{rating} | "
-                f"Education:{education} | "
-                f"Skills:{skills_input} | "
-                f"Feedback:{feedback_text}\n"
-            )
-
-            # Save locally
+            # Local Save
             with open("feedback_log.txt", "a") as f:
-                f.write(feedback_entry)
+                f.write(f"{timestamp} | {name} | {rating} | {education} | {skills_input} | {feedback_text}\n")
 
-            # Save to Google Sheet
+            # Google Sheet Save
             save_feedback_to_sheet([
                 timestamp,
                 name,
@@ -306,7 +328,10 @@ if st.button("🔎 Generate Career Intelligence Plan", use_container_width=True)
 
             st.success("Thank you for feedback!")
 
+# ==========================================================
 # ================= ADMIN DASHBOARD =================
+# ==========================================================
+
 if st.session_state.admin_logged:
 
     st.sidebar.markdown("## 🛠 Admin Dashboard")

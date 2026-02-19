@@ -1,6 +1,6 @@
 # ==========================================================
 # FUTUREPROOF AI – Career Intelligence Engine (Admin Edition)
-# Dynamic Domain-Specific Version
+# Dynamic Domain-Specific Version (Groq Llama 3.1)
 # ==========================================================
 
 import streamlit as st
@@ -12,7 +12,9 @@ import warnings
 import json
 from datetime import datetime
 from sentence_transformers import SentenceTransformer, util
-from google import genai
+
+# Groq
+from groq import Groq
 
 # Google Sheet
 import gspread
@@ -73,14 +75,14 @@ with st.sidebar:
         else:
             st.error("Invalid credentials")
 
-# ================= LOAD API KEY =================
-api_key = os.getenv("GOOGLE_API_KEY")
+# ================= LOAD GROQ API KEY =================
+api_key = os.getenv("GROQ_API_KEY")
 if not api_key:
-    st.error("❌ GOOGLE_API_KEY not found.")
+    st.error("❌ GROQ_API_KEY not found.")
     st.stop()
 
-client = genai.Client(api_key=api_key)
-GEMINI_MODEL = "gemini-2.5-flash"
+client = Groq(api_key=api_key)
+GROQ_MODEL = "llama-3.1-8b-instant"
 
 # ================= API USAGE LOGGER =================
 def log_api_usage(event_type, status):
@@ -106,22 +108,25 @@ def load_data():
 
 df = load_data()
 
-# ================= GEMINI HELPER =================
-def gemini_generate(prompt):
+# ================= GROQ HELPER =================
+def gemini_generate(prompt):  # keeping same function name to avoid breaking logic
     try:
-        response = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=prompt
+        response = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": "You are a precise career intelligence assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3
         )
-        if response and response.text:
-            log_api_usage("Gemini Call", "SUCCESS")
-            return response.text.strip()
 
-        log_api_usage("Gemini Call", "EMPTY")
-        return None
+        result = response.choices[0].message.content.strip()
+
+        log_api_usage("Groq Call", "SUCCESS")
+        return result
 
     except Exception as e:
-        log_api_usage("Gemini Call", f"FAILED: {str(e)}")
+        log_api_usage("Groq Call", f"FAILED: {str(e)}")
         return None
 
 # ==========================================================
@@ -137,21 +142,8 @@ Based on these skills:
 
 Identify the PRIMARY technology domain.
 
-Rules:
-- Return ONLY one domain name.
-- Keep it concise (max 4 words).
-- Must strictly reflect given skills.
-- Do NOT invent futuristic titles.
-
-Examples:
-Python, ML → Data Science & AI
-SAP, S4HANA → SAP & Enterprise Systems
-Cybersecurity, SOC → Cybersecurity
-AWS, DevOps → Cloud & DevOps
-
-Return only the domain name.
+Return ONLY the domain name.
 """
-
     domain = gemini_generate(prompt)
     return domain if domain else "Technology Domain"
 
@@ -181,10 +173,7 @@ def save_feedback_to_sheet(data_row):
     except Exception as e:
         log_api_usage("GoogleSheet Save", f"FAILED: {str(e)}")
 
-# ==========================================================
-# ================= ROLE & GROWTH LOGIC =================
-# ==========================================================
-
+# ================= ROLE & GROWTH =================
 def infer_career_role(skills):
     domain = detect_domain(skills)
 
@@ -193,14 +182,8 @@ User Domain: {domain}
 User Skills: {", ".join(skills)}
 
 Suggest ONE advanced career role strictly inside this domain.
-
-Rules:
-- Do NOT switch domain.
-- Must align with skills.
-- Keep it realistic for 2026.
-- Return only the role name.
+Return only role name.
 """
-
     role = gemini_generate(prompt)
     return role if role else f"Senior {domain} Specialist"
 
@@ -215,7 +198,6 @@ Domain: {domain}
 Suggest 6 high-impact growth skills strictly within this domain.
 Return comma-separated names only.
 """
-
     response = gemini_generate(prompt)
     if not response:
         return []
@@ -234,7 +216,6 @@ Domain: {domain}
 Suggest 5 globally recognized certifications strictly for this domain.
 Return comma-separated names only.
 """
-
     response = gemini_generate(prompt)
     if not response:
         return []
@@ -312,11 +293,9 @@ if st.button("🔎 Generate Career Intelligence Plan", use_container_width=True)
         if st.button("Submit Feedback"):
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            # Local Save
             with open("feedback_log.txt", "a") as f:
                 f.write(f"{timestamp} | {name} | {rating} | {education} | {skills_input} | {feedback_text}\n")
 
-            # Google Sheet Save
             save_feedback_to_sheet([
                 timestamp,
                 name,
@@ -328,10 +307,7 @@ if st.button("🔎 Generate Career Intelligence Plan", use_container_width=True)
 
             st.success("Thank you for feedback!")
 
-# ==========================================================
 # ================= ADMIN DASHBOARD =================
-# ==========================================================
-
 if st.session_state.admin_logged:
 
     st.sidebar.markdown("## 🛠 Admin Dashboard")

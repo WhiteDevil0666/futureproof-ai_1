@@ -1,6 +1,6 @@
 # ==========================================================
 # FUTUREPROOF AI – Skill Intelligence & Market Insight Engine
-# Domain-Neutral Production Version
+# Production Version (With Certification Tab Restored)
 # ==========================================================
 
 import streamlit as st
@@ -13,10 +13,7 @@ import json
 from datetime import datetime
 from sentence_transformers import SentenceTransformer, util
 
-# Groq
 from groq import Groq
-
-# Google Sheet
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -41,7 +38,6 @@ section[data-testid="stSidebar"] {
     color: white !important;
 }
 label { color: white !important; font-weight: 500; }
-
 .stButton>button {
     background: linear-gradient(90deg, #6366f1, #3b82f6);
     color: white;
@@ -50,20 +46,13 @@ label { color: white !important; font-weight: 500; }
     font-weight: 600;
     border: none;
 }
-
-div.stTabs [data-baseweb="tab-panel"] {
-    background: rgba(255,255,255,0.05);
-    padding: 20px;
-    border-radius: 15px;
-}
 </style>
 """, unsafe_allow_html=True)
 
-# ================= HEADER =================
 st.markdown('<div class="main-title">🚀 FutureProof Skill Intelligence Engine</div>', unsafe_allow_html=True)
 st.caption("Analyze Your Skills. Understand Your Domain. Evaluate Market Reality.")
 
-# ================= ADMIN LOGIN =================
+# ================= ADMIN =================
 ADMIN_USERNAME = os.getenv("ADMIN_USER")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASS")
 
@@ -82,7 +71,7 @@ with st.sidebar:
         else:
             st.error("Invalid credentials")
 
-# ================= LOAD GROQ API KEY =================
+# ================= GROQ =================
 api_key = os.getenv("GROQ_API_KEY")
 if not api_key:
     st.error("❌ GROQ_API_KEY not found.")
@@ -91,31 +80,11 @@ if not api_key:
 client = Groq(api_key=api_key)
 GROQ_MODEL = "llama-3.1-8b-instant"
 
-# ================= LOGGER =================
 def log_api_usage(event_type, status):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open("api_usage_log.txt", "a") as f:
         f.write(f"{timestamp} | {event_type} | {status}\n")
 
-# ================= LOAD MODEL =================
-@st.cache_resource
-def load_model():
-    return SentenceTransformer("all-MiniLM-L6-v2")
-
-embed_model = load_model()
-
-# ================= LOAD DATA =================
-@st.cache_data
-def load_data():
-    df = pd.read_csv("futureproof_dummy_data.csv")
-    df.columns = [c.lower().strip() for c in df.columns]
-    df["current_skills"] = df["current_skills"].fillna("").str.lower()
-    df["interested_future_field"] = df["interested_future_field"].fillna("").str.lower()
-    return df
-
-df = load_data()
-
-# ================= GROQ HELPER =================
 def gemini_generate(prompt):
     try:
         response = client.chat.completions.create(
@@ -133,67 +102,92 @@ def gemini_generate(prompt):
         log_api_usage("Groq Call", f"FAILED: {str(e)}")
         return None
 
-# ================= DOMAIN DETECTION (NEUTRAL) =================
+# ================= DOMAIN =================
 def detect_domain(skills):
     prompt = f"""
 Based strictly on these skills:
 {", ".join(skills)}
 
-Identify the TRUE primary professional domain.
-Do not force into AI or technology categories.
-Return only a short domain name (max 3 words).
+Identify the TRUE professional domain.
+Return only domain name.
 """
-    domain = gemini_generate(prompt)
-    return domain if domain else "General Domain"
+    return gemini_generate(prompt) or "General Domain"
 
-# ================= MARKET SUMMARY =================
+# ================= ROLE =================
+def infer_career_role(skills):
+    domain = detect_domain(skills)
+    prompt = f"""
+Skills: {", ".join(skills)}
+Domain: {domain}
+
+Suggest one realistic professional role strictly aligned.
+Return only role name.
+"""
+    return gemini_generate(prompt) or "Specialist"
+
+# ================= GROWTH =================
+def infer_growth_plan(role, skills):
+    domain = detect_domain(skills)
+    prompt = f"""
+Role: {role}
+Domain: {domain}
+
+Suggest 6 skills that increase competitiveness.
+Return comma-separated only.
+"""
+    response = gemini_generate(prompt)
+    if not response:
+        return []
+    raw = re.split(r",|\n", response)
+    return [s.strip().title() for s in raw if s.strip()][:6]
+
+# ================= CERTIFICATIONS =================
+def infer_certifications(role, skills):
+    domain = detect_domain(skills)
+    prompt = f"""
+Role: {role}
+Domain: {domain}
+
+Suggest 6 globally recognized certifications.
+Return comma-separated names only.
+"""
+    response = gemini_generate(prompt)
+    if not response:
+        return []
+    return [c.strip() for c in response.split(",")][:6]
+
+# ================= MARKET =================
 def generate_market_summary(role, skills):
     domain = detect_domain(skills)
-
     prompt = f"""
 Role: {role}
 Domain: {domain}
 
-From a career market perspective provide:
-- Current demand level
-- Job availability scale
-- Industry vs academic dependency
-- 3-5 year growth outlook
-- Hiring competitiveness
-
-Be realistic and neutral.
+Explain:
+- Demand level
+- Hiring scale
+- 3-5 year outlook
+- Job availability
+Keep it market-focused.
 """
-    response = gemini_generate(prompt)
-    return response if response else "Market data unavailable."
+    return gemini_generate(prompt) or "Market data unavailable."
 
-# ================= CONFIDENCE & RISK (CAREER BASED) =================
+# ================= CONFIDENCE =================
 def generate_confidence_and_risk(role, skills):
     domain = detect_domain(skills)
-
     prompt = f"""
 Role: {role}
 Domain: {domain}
-Skills: {", ".join(skills)}
-
-Evaluate strictly from CAREER MARKET viability.
 
 Provide:
-
-Confidence: (0-100%)
-Risk: (Low/Medium/High)
-Summary: One-line employability explanation
-
-Base this on:
-- Job volume
-- Industry demand
-- Entry barriers
-- Saturation
-- Long-term stability
+Confidence: X%
+Risk: Low/Medium/High
+Summary: Short explanation
+Based on career demand.
 """
-    response = gemini_generate(prompt)
-    return response if response else "Confidence: 70%\nRisk: Medium\nSummary: Market outlook moderate."
+    return gemini_generate(prompt) or "Confidence: 70%\nRisk: Medium\nSummary: Moderate outlook."
 
-# ================= GOOGLE SHEET SAVE =================
+# ================= GOOGLE SHEET =================
 def save_feedback_to_sheet(data_row):
     try:
         scopes = [
@@ -205,48 +199,15 @@ def save_feedback_to_sheet(data_row):
         client_gs = gspread.authorize(credentials)
         sheet = client_gs.open("FutureProof_Feedback").sheet1
         sheet.append_row(data_row)
-        log_api_usage("GoogleSheet Save", "SUCCESS")
     except Exception as e:
-        log_api_usage("GoogleSheet Save", f"FAILED: {str(e)}")
         st.error(f"Google Sheet Error: {str(e)}")
-
-# ================= ROLE =================
-def infer_career_role(skills):
-    domain = detect_domain(skills)
-    prompt = f"""
-Skills: {", ".join(skills)}
-Domain: {domain}
-
-Suggest one realistic professional role strictly aligned to these skills.
-Return only role name.
-"""
-    role = gemini_generate(prompt)
-    return role if role else "Specialist"
-
-# ================= GROWTH =================
-def infer_growth_plan(role, skills):
-    domain = detect_domain(skills)
-    prompt = f"""
-Role: {role}
-Domain: {domain}
-
-Suggest 6 skills that would increase professional competitiveness.
-Return comma-separated names only.
-"""
-    response = gemini_generate(prompt)
-    if not response:
-        return []
-    raw = re.split(r",|\n", response)
-    return [s.strip().title() for s in raw if s.strip()][:6]
 
 # ================= USER INPUT =================
 st.markdown("### 👤 Your Profile")
 
 col1, col2 = st.columns(2)
-
 with col1:
     name = st.text_input("Name")
-
 with col2:
     education = st.selectbox(
         "Education Level",
@@ -257,95 +218,93 @@ skills_input = st.text_input("Current Skills (comma-separated)")
 hours = st.slider("Weekly Learning Hours Available", 1, 40, 10)
 
 # ================= GENERATE =================
-if "report_generated" not in st.session_state:
-    st.session_state.report_generated = False
-
 if st.button("🔎 Analyze Skill Intelligence", use_container_width=True):
-    st.session_state.report_generated = True
 
-if st.session_state.report_generated:
+    skills = [s.strip().lower() for s in skills_input.split(",") if s.strip()]
 
-    if not name or not skills_input:
-        st.warning("Please enter your name and skills.")
-    else:
+    role = infer_career_role(skills)
+    growth_skills = infer_growth_plan(role, skills)
+    certifications = infer_certifications(role, skills)
+    market_summary = generate_market_summary(role, skills)
+    confidence_risk = generate_confidence_and_risk(role, skills)
 
-        skills = [s.strip().lower() for s in skills_input.split(",") if s.strip()]
+    weeks = round((len(growth_skills) * 40) / hours)
 
-        with st.spinner("Analyzing skill alignment and market reality..."):
-            role = infer_career_role(skills)
-            growth_skills = infer_growth_plan(role, skills)
-            market_summary = generate_market_summary(role, skills)
-            confidence_risk = generate_confidence_and_risk(role, skills)
-            weeks = round((len(growth_skills) * 40) / hours)
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        ["🎯 Role Alignment",
+         "📈 Competitiveness Plan",
+         "🎓 Certifications",
+         "🌍 Market Outlook",
+         "📊 Skill Summary"]
+    )
 
-        st.success("✅ Skill Intelligence Report Ready!")
+    with tab1:
+        st.markdown(f"<h1 style='color:#60a5fa'>{role}</h1>", unsafe_allow_html=True)
+        st.markdown(f"🧭 Detected Domain: `{detect_domain(skills)}`")
+        st.markdown(f"```\n{confidence_risk}\n```")
 
-        tab1, tab2, tab3, tab4 = st.tabs(
-            ["🎯 Role Alignment", "📈 Competitiveness Plan", "🌍 Market Outlook", "📊 Skill Summary"]
-        )
+    with tab2:
+        for skill in growth_skills:
+            st.markdown(f"✔️ {skill}")
+        st.markdown(f"⏳ Estimated Timeline: ~{weeks} weeks")
 
-        with tab1:
-            st.markdown("### 🎯 Suggested Professional Role")
-            st.markdown(f"<div style='font-size:40px;font-weight:800;color:#60a5fa;'>{role}</div>", unsafe_allow_html=True)
+    # ================= CERTIFICATION TAB RESTORED =================
+    with tab3:
+        st.markdown("### 🎓 Recommended Certifications")
 
-            domain = detect_domain(skills)
-            st.markdown(f"### 🧭 Detected Domain: `{domain}`")
+        free_platforms = {
+            "Coursera (Audit Free)": "https://www.coursera.org",
+            "edX (Audit Free)": "https://www.edx.org",
+            "Google Skillshop": "https://skillshop.withgoogle.com",
+            "Microsoft Learn": "https://learn.microsoft.com",
+            "AWS Skill Builder": "https://skillbuilder.aws"
+        }
 
-            st.markdown("### 🤖 Career Confidence & Risk")
-            st.markdown(f"```\n{confidence_risk}\n```")
+        paid_platforms = {
+            "AWS Certification": "https://aws.amazon.com/certification/",
+            "Microsoft Certification": "https://learn.microsoft.com/en-us/certifications/",
+            "Cisco Certification": "https://www.cisco.com/c/en/us/training-events/training-certifications.html",
+            "Oracle Certification": "https://education.oracle.com",
+            "PMI Certification": "https://www.pmi.org/certifications"
+        }
 
-        with tab2:
-            for skill in growth_skills:
-                st.markdown(f"✔️ {skill}")
-            st.markdown(f"### ⏳ Estimated Development Timeline: ~{weeks} weeks")
+        st.markdown("#### 📘 Certification Names")
+        for cert in certifications:
+            st.markdown(f"- {cert}")
 
-        with tab3:
-            st.markdown("### 🌍 Market Intelligence")
-            st.markdown(market_summary)
+        st.markdown("#### 🆓 Free Learning Platforms")
+        for name, link in free_platforms.items():
+            st.markdown(f"[{name}]({link})")
 
-        with tab4:
-            st.markdown("### Your Entered Skills")
-            for s in skills:
-                st.markdown(f"- {s.title()}")
+        st.markdown("#### 💼 Paid / Market Recognized Certifications")
+        for name, link in paid_platforms.items():
+            st.markdown(f"[{name}]({link})")
 
-        st.divider()
+    with tab4:
+        st.markdown(market_summary)
 
-        rating = st.slider("How useful was this analysis?", 1, 5, 4)
-        feedback_text = st.text_area("What can we improve?")
+    with tab5:
+        for s in skills:
+            st.markdown(f"- {s.title()}")
 
-        if st.button("Submit Feedback"):
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    st.divider()
 
-            with open("feedback_log.txt", "a") as f:
-                f.write(f"{timestamp} | {name} | {rating} | {education} | {skills_input} | {feedback_text}\n")
+    rating = st.slider("How useful was this analysis?", 1, 5, 4)
+    feedback_text = st.text_area("What can we improve?")
 
-            save_feedback_to_sheet([
-                timestamp,
-                name,
-                rating,
-                education,
-                skills_input,
-                feedback_text
-            ])
+    if st.button("Submit Feedback"):
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            st.success("✅ Feedback successfully saved!")
+        with open("feedback_log.txt", "a") as f:
+            f.write(f"{timestamp} | {name} | {rating} | {education} | {skills_input} | {feedback_text}\n")
 
-# ================= ADMIN DASHBOARD =================
-if st.session_state.admin_logged:
+        save_feedback_to_sheet([
+            timestamp,
+            name,
+            rating,
+            education,
+            skills_input,
+            feedback_text
+        ])
 
-    st.sidebar.markdown("## 🛠 Admin Dashboard")
-
-    if st.sidebar.button("Check API Status"):
-        test = gemini_generate("Say hello")
-        if test:
-            st.sidebar.success("API Working")
-        else:
-            st.sidebar.error("API Not Working")
-
-    if st.sidebar.button("View Feedback Logs"):
-        try:
-            with open("feedback_log.txt", "r") as f:
-                logs = f.read()
-            st.sidebar.text_area("Feedback Logs", logs, height=300)
-        except:
-            st.sidebar.info("No feedback yet.")
+        st.success("✅ Feedback saved successfully!")

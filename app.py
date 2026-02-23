@@ -1,7 +1,6 @@
 # ==========================================================
-# FUTUREPROOF AI – Career Intelligence Engine (Admin Edition)
-# Dynamic Domain-Specific Version (Groq Llama 3.1)
-# PRODUCTION SAFE ENHANCED VERSION
+# FUTUREPROOF AI – Skill Intelligence & Market Insight Engine
+# Domain-Neutral Production Version
 # ==========================================================
 
 import streamlit as st
@@ -25,7 +24,7 @@ warnings.filterwarnings("ignore")
 
 # ================= PAGE CONFIG =================
 st.set_page_config(
-    page_title="FutureProof AI",
+    page_title="FutureProof Skill Intelligence",
     page_icon="🚀",
     layout="wide"
 )
@@ -61,8 +60,8 @@ div.stTabs [data-baseweb="tab-panel"] {
 """, unsafe_allow_html=True)
 
 # ================= HEADER =================
-st.markdown('<div class="main-title">🚀 FutureProof AI Career Intelligence Engine</div>', unsafe_allow_html=True)
-st.caption("Plan Your 2026 Career Growth Intelligently")
+st.markdown('<div class="main-title">🚀 FutureProof Skill Intelligence Engine</div>', unsafe_allow_html=True)
+st.caption("Analyze Your Skills. Understand Your Domain. Evaluate Market Reality.")
 
 # ================= ADMIN LOGIN =================
 ADMIN_USERNAME = os.getenv("ADMIN_USER")
@@ -92,7 +91,7 @@ if not api_key:
 client = Groq(api_key=api_key)
 GROQ_MODEL = "llama-3.1-8b-instant"
 
-# ================= API LOGGER =================
+# ================= LOGGER =================
 def log_api_usage(event_type, status):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open("api_usage_log.txt", "a") as f:
@@ -122,7 +121,7 @@ def gemini_generate(prompt):
         response = client.chat.completions.create(
             model=GROQ_MODEL,
             messages=[
-                {"role": "system", "content": "You are a precise career intelligence assistant."},
+                {"role": "system", "content": "You are a neutral professional career intelligence analyst."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3
@@ -134,17 +133,18 @@ def gemini_generate(prompt):
         log_api_usage("Groq Call", f"FAILED: {str(e)}")
         return None
 
-# ================= DOMAIN DETECTION =================
+# ================= DOMAIN DETECTION (NEUTRAL) =================
 def detect_domain(skills):
     prompt = f"""
-Based on these skills:
+Based strictly on these skills:
 {", ".join(skills)}
 
-Identify the PRIMARY technology domain.
-Return ONLY the domain name.
+Identify the TRUE primary professional domain.
+Do not force into AI or technology categories.
+Return only a short domain name (max 3 words).
 """
     domain = gemini_generate(prompt)
-    return domain if domain else "Technology Domain"
+    return domain if domain else "General Domain"
 
 # ================= MARKET SUMMARY =================
 def generate_market_summary(role, skills):
@@ -154,34 +154,44 @@ def generate_market_summary(role, skills):
 Role: {role}
 Domain: {domain}
 
-Provide:
-1. Current demand level
-2. Job availability
-3. Future outlook (3-5 years)
-4. Risk factors
-5. Final career suggestion
+From a career market perspective provide:
+- Current demand level
+- Job availability scale
+- Industry vs academic dependency
+- 3-5 year growth outlook
+- Hiring competitiveness
 
-Keep concise and professional.
+Be realistic and neutral.
 """
     response = gemini_generate(prompt)
-    return response if response else "Market insight unavailable."
+    return response if response else "Market data unavailable."
 
-# ================= AI CONFIDENCE & RISK =================
+# ================= CONFIDENCE & RISK (CAREER BASED) =================
 def generate_confidence_and_risk(role, skills):
+    domain = detect_domain(skills)
+
     prompt = f"""
 Role: {role}
+Domain: {domain}
 Skills: {", ".join(skills)}
 
-Estimate:
-1. AI Confidence Score (0-100)
-2. Risk Level (Low, Medium, High)
+Evaluate strictly from CAREER MARKET viability.
 
-Return format:
-Confidence: X%
-Risk: Level
+Provide:
+
+Confidence: (0-100%)
+Risk: (Low/Medium/High)
+Summary: One-line employability explanation
+
+Base this on:
+- Job volume
+- Industry demand
+- Entry barriers
+- Saturation
+- Long-term stability
 """
     response = gemini_generate(prompt)
-    return response if response else "Confidence: 75%\nRisk: Medium"
+    return response if response else "Confidence: 70%\nRisk: Medium\nSummary: Market outlook moderate."
 
 # ================= GOOGLE SHEET SAVE =================
 def save_feedback_to_sheet(data_row):
@@ -204,14 +214,14 @@ def save_feedback_to_sheet(data_row):
 def infer_career_role(skills):
     domain = detect_domain(skills)
     prompt = f"""
-User Domain: {domain}
-User Skills: {", ".join(skills)}
+Skills: {", ".join(skills)}
+Domain: {domain}
 
-Suggest ONE advanced career role strictly inside this domain.
+Suggest one realistic professional role strictly aligned to these skills.
 Return only role name.
 """
     role = gemini_generate(prompt)
-    return role if role else f"Senior {domain} Specialist"
+    return role if role else "Specialist"
 
 # ================= GROWTH =================
 def infer_growth_plan(role, skills):
@@ -220,7 +230,7 @@ def infer_growth_plan(role, skills):
 Role: {role}
 Domain: {domain}
 
-Suggest 6 high-impact growth skills strictly within this domain.
+Suggest 6 skills that would increase professional competitiveness.
 Return comma-separated names only.
 """
     response = gemini_generate(prompt)
@@ -228,25 +238,6 @@ Return comma-separated names only.
         return []
     raw = re.split(r",|\n", response)
     return [s.strip().title() for s in raw if s.strip()][:6]
-
-# ================= CERTIFICATIONS =================
-def infer_certifications(role, skills):
-    domain = detect_domain(skills)
-    prompt = f"""
-Role: {role}
-Domain: {domain}
-
-Suggest 4 certifications.
-
-For EACH certification provide:
-Certification Name:
-Free Platform:
-Free Link:
-Paid Platform:
-Paid Link:
-"""
-    response = gemini_generate(prompt)
-    return response if response else ""
 
 # ================= USER INPUT =================
 st.markdown("### 👤 Your Profile")
@@ -269,7 +260,7 @@ hours = st.slider("Weekly Learning Hours Available", 1, 40, 10)
 if "report_generated" not in st.session_state:
     st.session_state.report_generated = False
 
-if st.button("🔎 Generate Career Intelligence Plan", use_container_width=True):
+if st.button("🔎 Analyze Skill Intelligence", use_container_width=True):
     st.session_state.report_generated = True
 
 if st.session_state.report_generated:
@@ -280,55 +271,46 @@ if st.session_state.report_generated:
 
         skills = [s.strip().lower() for s in skills_input.split(",") if s.strip()]
 
-        with st.spinner("Analyzing your domain and future opportunities..."):
+        with st.spinner("Analyzing skill alignment and market reality..."):
             role = infer_career_role(skills)
             growth_skills = infer_growth_plan(role, skills)
-            certifications = infer_certifications(role, skills)
             market_summary = generate_market_summary(role, skills)
             confidence_risk = generate_confidence_and_risk(role, skills)
             weeks = round((len(growth_skills) * 40) / hours)
 
-        st.success("✅ Career Intelligence Report Ready!")
+        st.success("✅ Skill Intelligence Report Ready!")
 
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(
-            ["🎯 Overview", "📈 Growth Roadmap", "🎓 Certifications", "📊 Skill Insights", "🌍 Market Outlook"]
+        tab1, tab2, tab3, tab4 = st.tabs(
+            ["🎯 Role Alignment", "📈 Competitiveness Plan", "🌍 Market Outlook", "📊 Skill Summary"]
         )
 
         with tab1:
-            st.markdown("### 🎯 Recommended Role")
+            st.markdown("### 🎯 Suggested Professional Role")
             st.markdown(f"<div style='font-size:40px;font-weight:800;color:#60a5fa;'>{role}</div>", unsafe_allow_html=True)
 
             domain = detect_domain(skills)
             st.markdown(f"### 🧭 Detected Domain: `{domain}`")
 
-            st.markdown("### 🤖 AI Confidence & Risk")
+            st.markdown("### 🤖 Career Confidence & Risk")
             st.markdown(f"```\n{confidence_risk}\n```")
 
         with tab2:
             for skill in growth_skills:
                 st.markdown(f"✔️ {skill}")
-            st.markdown(f"### ⏳ Estimated Upskilling Time: ~{weeks} weeks")
+            st.markdown(f"### ⏳ Estimated Development Timeline: ~{weeks} weeks")
 
         with tab3:
-            st.markdown("### 🎓 Certification Roadmap")
-            sections = certifications.split("\n\n")
-            for section in sections:
-                if section.strip():
-                    st.markdown("----")
-                    st.markdown(section)
+            st.markdown("### 🌍 Market Intelligence")
+            st.markdown(market_summary)
 
         with tab4:
-            st.markdown("### Your Skills")
+            st.markdown("### Your Entered Skills")
             for s in skills:
                 st.markdown(f"- {s.title()}")
 
-        with tab5:
-            st.markdown("### 🌍 Market Intelligence Summary")
-            st.markdown(market_summary)
-
         st.divider()
 
-        rating = st.slider("How useful was this plan?", 1, 5, 4)
+        rating = st.slider("How useful was this analysis?", 1, 5, 4)
         feedback_text = st.text_area("What can we improve?")
 
         if st.button("Submit Feedback"):

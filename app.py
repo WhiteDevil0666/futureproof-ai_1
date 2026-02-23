@@ -150,7 +150,7 @@ Return ONLY the domain name.
 # ================= GOOGLE SHEET SAVE =================
 def save_feedback_to_sheet(data_row):
     try:
-        creds_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+        creds_json = st.secrets.get("GOOGLE_SERVICE_ACCOUNT_JSON")
         if not creds_json:
             log_api_usage("GoogleSheet Save", "NO_CREDENTIALS")
             return
@@ -326,4 +326,5 @@ if st.session_state.admin_logged:
             st.sidebar.text_area("Feedback Logs", logs, height=300)
         except:
             st.sidebar.info("No feedback yet.")
+
 

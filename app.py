@@ -109,7 +109,7 @@ def load_data():
 df = load_data()
 
 # ================= GROQ HELPER =================
-def gemini_generate(prompt):  # keeping same function name to avoid breaking logic
+def gemini_generate(prompt):
     try:
         response = client.chat.completions.create(
             model=GROQ_MODEL,
@@ -129,10 +129,7 @@ def gemini_generate(prompt):  # keeping same function name to avoid breaking log
         log_api_usage("Groq Call", f"FAILED: {str(e)}")
         return None
 
-# ==========================================================
 # ================= DYNAMIC DOMAIN DETECTION =================
-# ==========================================================
-
 def detect_domain(skills):
     prompt = f"""
 You are an expert technology domain classifier.
@@ -150,12 +147,8 @@ Return ONLY the domain name.
 # ================= GOOGLE SHEET SAVE =================
 def save_feedback_to_sheet(data_row):
     try:
-        creds_json = st.secrets.get("GOOGLE_SERVICE_ACCOUNT_JSON")
-        if not creds_json:
-            log_api_usage("GoogleSheet Save", "NO_CREDENTIALS")
-            return
-
-        creds_dict = json.loads(creds_json)
+        # 🔥 UPDATED LINE (ONLY CHANGE DONE)
+        creds_dict = json.loads(st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"])
 
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
@@ -222,10 +215,7 @@ Return comma-separated names only.
 
     return [c.strip() for c in response.split(",")][:5]
 
-# ==========================================================
 # ================= USER INPUT =================
-# ==========================================================
-
 st.markdown("### 👤 Your Profile")
 
 col1, col2 = st.columns(2)
@@ -242,10 +232,7 @@ with col2:
 skills_input = st.text_input("Current Skills (comma-separated)")
 hours = st.slider("Weekly Learning Hours Available", 1, 40, 10)
 
-# ==========================================================
 # ================= GENERATE =================
-# ==========================================================
-
 if st.button("🔎 Generate Career Intelligence Plan", use_container_width=True):
 
     if not name or not skills_input:
@@ -326,5 +313,3 @@ if st.session_state.admin_logged:
             st.sidebar.text_area("Feedback Logs", logs, height=300)
         except:
             st.sidebar.info("No feedback yet.")
-
-

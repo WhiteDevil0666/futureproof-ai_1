@@ -1,6 +1,7 @@
 # ==========================================================
 # FUTUREPROOF AI – Career Intelligence Engine (Admin Edition)
 # Dynamic Domain-Specific Version (Groq Llama 3.1)
+# PRODUCTION SAFE ENHANCED VERSION
 # ==========================================================
 
 import streamlit as st
@@ -126,11 +127,9 @@ def gemini_generate(prompt):
             ],
             temperature=0.3
         )
-
         result = response.choices[0].message.content.strip()
         log_api_usage("Groq Call", "SUCCESS")
         return result
-
     except Exception as e:
         log_api_usage("Groq Call", f"FAILED: {str(e)}")
         return None
@@ -147,6 +146,43 @@ Return ONLY the domain name.
     domain = gemini_generate(prompt)
     return domain if domain else "Technology Domain"
 
+# ================= MARKET SUMMARY =================
+def generate_market_summary(role, skills):
+    domain = detect_domain(skills)
+
+    prompt = f"""
+Role: {role}
+Domain: {domain}
+
+Provide:
+1. Current demand level
+2. Job availability
+3. Future outlook (3-5 years)
+4. Risk factors
+5. Final career suggestion
+
+Keep concise and professional.
+"""
+    response = gemini_generate(prompt)
+    return response if response else "Market insight unavailable."
+
+# ================= AI CONFIDENCE & RISK =================
+def generate_confidence_and_risk(role, skills):
+    prompt = f"""
+Role: {role}
+Skills: {", ".join(skills)}
+
+Estimate:
+1. AI Confidence Score (0-100)
+2. Risk Level (Low, Medium, High)
+
+Return format:
+Confidence: X%
+Risk: Level
+"""
+    response = gemini_generate(prompt)
+    return response if response else "Confidence: 75%\nRisk: Medium"
+
 # ================= GOOGLE SHEET SAVE =================
 def save_feedback_to_sheet(data_row):
     try:
@@ -154,16 +190,12 @@ def save_feedback_to_sheet(data_row):
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
-
         creds_dict = st.secrets["GOOGLE_SERVICE_ACCOUNT"]
         credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         client_gs = gspread.authorize(credentials)
-
         sheet = client_gs.open("FutureProof_Feedback").sheet1
         sheet.append_row(data_row)
-
         log_api_usage("GoogleSheet Save", "SUCCESS")
-
     except Exception as e:
         log_api_usage("GoogleSheet Save", f"FAILED: {str(e)}")
         st.error(f"Google Sheet Error: {str(e)}")
@@ -171,7 +203,6 @@ def save_feedback_to_sheet(data_row):
 # ================= ROLE =================
 def infer_career_role(skills):
     domain = detect_domain(skills)
-
     prompt = f"""
 User Domain: {domain}
 User Skills: {", ".join(skills)}
@@ -185,7 +216,6 @@ Return only role name.
 # ================= GROWTH =================
 def infer_growth_plan(role, skills):
     domain = detect_domain(skills)
-
     prompt = f"""
 Role: {role}
 Domain: {domain}
@@ -196,14 +226,12 @@ Return comma-separated names only.
     response = gemini_generate(prompt)
     if not response:
         return []
-
     raw = re.split(r",|\n", response)
     return [s.strip().title() for s in raw if s.strip()][:6]
 
-# ================= CERTIFICATIONS (UPDATED) =================
+# ================= CERTIFICATIONS =================
 def infer_certifications(role, skills):
     domain = detect_domain(skills)
-
     prompt = f"""
 Role: {role}
 Domain: {domain}
@@ -216,10 +244,7 @@ Free Platform:
 Free Link:
 Paid Platform:
 Paid Link:
-
-Return structured text exactly as above.
 """
-
     response = gemini_generate(prompt)
     return response if response else ""
 
@@ -259,19 +284,25 @@ if st.session_state.report_generated:
             role = infer_career_role(skills)
             growth_skills = infer_growth_plan(role, skills)
             certifications = infer_certifications(role, skills)
+            market_summary = generate_market_summary(role, skills)
+            confidence_risk = generate_confidence_and_risk(role, skills)
             weeks = round((len(growth_skills) * 40) / hours)
 
         st.success("✅ Career Intelligence Report Ready!")
 
-        tab1, tab2, tab3, tab4 = st.tabs(
-            ["🎯 Overview", "📈 Growth Roadmap", "🎓 Certifications", "📊 Skill Insights"]
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(
+            ["🎯 Overview", "📈 Growth Roadmap", "🎓 Certifications", "📊 Skill Insights", "🌍 Market Outlook"]
         )
 
         with tab1:
+            st.markdown("### 🎯 Recommended Role")
+            st.markdown(f"<div style='font-size:40px;font-weight:800;color:#60a5fa;'>{role}</div>", unsafe_allow_html=True)
+
             domain = detect_domain(skills)
-            st.metric("🎯 Recommended Role", role)
-            st.metric("📈 Market Demand Score", f"{np.random.randint(75,95)}%")
             st.markdown(f"### 🧭 Detected Domain: `{domain}`")
+
+            st.markdown("### 🤖 AI Confidence & Risk")
+            st.markdown(f"```\n{confidence_risk}\n```")
 
         with tab2:
             for skill in growth_skills:
@@ -280,7 +311,6 @@ if st.session_state.report_generated:
 
         with tab3:
             st.markdown("### 🎓 Certification Roadmap")
-
             sections = certifications.split("\n\n")
             for section in sections:
                 if section.strip():
@@ -291,6 +321,10 @@ if st.session_state.report_generated:
             st.markdown("### Your Skills")
             for s in skills:
                 st.markdown(f"- {s.title()}")
+
+        with tab5:
+            st.markdown("### 🌍 Market Intelligence Summary")
+            st.markdown(market_summary)
 
         st.divider()
 

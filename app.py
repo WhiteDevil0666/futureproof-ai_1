@@ -165,7 +165,7 @@ def save_feedback_to_sheet(data_row):
         credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         client_gs = gspread.authorize(credentials)
 
-        sheet = client_gs.open("FutureProof_AI_Feedback").sheet1
+        sheet = client_gs.open("FutureProof_Feedback").sheet1
         sheet.append_row(data_row)
 
         log_api_usage("GoogleSheet Save", "SUCCESS")
@@ -326,3 +326,4 @@ if st.session_state.admin_logged:
             st.sidebar.text_area("Feedback Logs", logs, height=300)
         except:
             st.sidebar.info("No feedback yet.")
+

@@ -147,8 +147,20 @@ Return ONLY the domain name.
 # ================= GOOGLE SHEET SAVE =================
 def save_feedback_to_sheet(data_row):
     try:
-        # 🔥 UPDATED LINE (ONLY CHANGE DONE)
-        creds_dict = json.loads(st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"])
+        # FIRST try Streamlit secrets
+        creds_json = None
+
+        if "GOOGLE_SERVICE_ACCOUNT_JSON" in st.secrets:
+            creds_json = st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"]
+        else:
+            creds_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+
+        if not creds_json:
+            log_api_usage("GoogleSheet Save", "NO_CREDENTIALS")
+            st.error("Google credentials not found.")
+            return
+
+        creds_dict = json.loads(creds_json)
 
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
@@ -158,13 +170,15 @@ def save_feedback_to_sheet(data_row):
         credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         client_gs = gspread.authorize(credentials)
 
-        sheet = client_gs.open("FutureProof_Feedback").Sheet1
+        sheet = client_gs.open("FutureProof_Feedback").sheet1
         sheet.append_row(data_row)
 
         log_api_usage("GoogleSheet Save", "SUCCESS")
 
     except Exception as e:
         log_api_usage("GoogleSheet Save", f"FAILED: {str(e)}")
+        st.error(f"Google Sheet Error: {str(e)}")
+
 
 # ================= ROLE & GROWTH =================
 def infer_career_role(skills):
@@ -323,5 +337,6 @@ if st.session_state.admin_logged:
             st.sidebar.text_area("Feedback Logs", logs, height=300)
         except:
             st.sidebar.info("No feedback yet.")
+
 
 

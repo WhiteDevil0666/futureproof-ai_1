@@ -41,6 +41,7 @@ section[data-testid="stSidebar"] {
     color: white !important;
 }
 label { color: white !important; font-weight: 500; }
+
 .stButton>button {
     background: linear-gradient(90deg, #6366f1, #3b82f6);
     color: white;
@@ -48,6 +49,12 @@ label { color: white !important; font-weight: 500; }
     height: 3em;
     font-weight: 600;
     border: none;
+}
+
+div.stTabs [data-baseweb="tab-panel"] {
+    background: rgba(255,255,255,0.05);
+    padding: 20px;
+    border-radius: 15px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -84,13 +91,13 @@ if not api_key:
 client = Groq(api_key=api_key)
 GROQ_MODEL = "llama-3.1-8b-instant"
 
-# ================= API USAGE LOGGER =================
+# ================= API LOGGER =================
 def log_api_usage(event_type, status):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open("api_usage_log.txt", "a") as f:
         f.write(f"{timestamp} | {event_type} | {status}\n")
 
-# ================= LOAD MODELS =================
+# ================= LOAD MODEL =================
 @st.cache_resource
 def load_model():
     return SentenceTransformer("all-MiniLM-L6-v2")
@@ -128,28 +135,19 @@ def gemini_generate(prompt):
         log_api_usage("Groq Call", f"FAILED: {str(e)}")
         return None
 
-# ==========================================================
-# ================= DYNAMIC DOMAIN DETECTION =================
-# ==========================================================
-
+# ================= DOMAIN DETECTION =================
 def detect_domain(skills):
     prompt = f"""
-You are an expert technology domain classifier.
-
 Based on these skills:
 {", ".join(skills)}
 
 Identify the PRIMARY technology domain.
-
 Return ONLY the domain name.
 """
     domain = gemini_generate(prompt)
     return domain if domain else "Technology Domain"
 
-# ==========================================================
-# ================= GOOGLE SHEET SAVE (UPDATED) =================
-# ==========================================================
-
+# ================= GOOGLE SHEET SAVE =================
 def save_feedback_to_sheet(data_row):
     try:
         scopes = [
@@ -157,9 +155,7 @@ def save_feedback_to_sheet(data_row):
             "https://www.googleapis.com/auth/drive"
         ]
 
-        # ✅ UPDATED: Read from Streamlit Secrets (TOML)
         creds_dict = st.secrets["GOOGLE_SERVICE_ACCOUNT"]
-
         credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         client_gs = gspread.authorize(credentials)
 
@@ -172,10 +168,7 @@ def save_feedback_to_sheet(data_row):
         log_api_usage("GoogleSheet Save", f"FAILED: {str(e)}")
         st.error(f"Google Sheet Error: {str(e)}")
 
-# ==========================================================
-# ================= ROLE & GROWTH =================
-# ==========================================================
-
+# ================= ROLE =================
 def infer_career_role(skills):
     domain = detect_domain(skills)
 
@@ -189,7 +182,7 @@ Return only role name.
     role = gemini_generate(prompt)
     return role if role else f"Senior {domain} Specialist"
 
-
+# ================= GROWTH =================
 def infer_growth_plan(role, skills):
     domain = detect_domain(skills)
 
@@ -207,7 +200,7 @@ Return comma-separated names only.
     raw = re.split(r",|\n", response)
     return [s.strip().title() for s in raw if s.strip()][:6]
 
-
+# ================= CERTIFICATIONS (UPDATED) =================
 def infer_certifications(role, skills):
     domain = detect_domain(skills)
 
@@ -215,19 +208,22 @@ def infer_certifications(role, skills):
 Role: {role}
 Domain: {domain}
 
-Suggest 5 globally recognized certifications strictly for this domain.
-Return comma-separated names only.
+Suggest 4 certifications.
+
+For EACH certification provide:
+Certification Name:
+Free Platform:
+Free Link:
+Paid Platform:
+Paid Link:
+
+Return structured text exactly as above.
 """
+
     response = gemini_generate(prompt)
-    if not response:
-        return []
+    return response if response else ""
 
-    return [c.strip() for c in response.split(",")][:5]
-
-# ==========================================================
 # ================= USER INPUT =================
-# ==========================================================
-
 st.markdown("### 👤 Your Profile")
 
 col1, col2 = st.columns(2)
@@ -244,10 +240,7 @@ with col2:
 skills_input = st.text_input("Current Skills (comma-separated)")
 hours = st.slider("Weekly Learning Hours Available", 1, 40, 10)
 
-# ==========================================================
 # ================= GENERATE =================
-# ==========================================================
-
 if "report_generated" not in st.session_state:
     st.session_state.report_generated = False
 
@@ -275,8 +268,10 @@ if st.session_state.report_generated:
         )
 
         with tab1:
+            domain = detect_domain(skills)
             st.metric("🎯 Recommended Role", role)
             st.metric("📈 Market Demand Score", f"{np.random.randint(75,95)}%")
+            st.markdown(f"### 🧭 Detected Domain: `{domain}`")
 
         with tab2:
             for skill in growth_skills:
@@ -284,8 +279,13 @@ if st.session_state.report_generated:
             st.markdown(f"### ⏳ Estimated Upskilling Time: ~{weeks} weeks")
 
         with tab3:
-            for cert in certifications:
-                st.markdown(f"🏅 {cert}")
+            st.markdown("### 🎓 Certification Roadmap")
+
+            sections = certifications.split("\n\n")
+            for section in sections:
+                if section.strip():
+                    st.markdown("----")
+                    st.markdown(section)
 
         with tab4:
             st.markdown("### Your Skills")

@@ -233,7 +233,15 @@ skills_input = st.text_input("Current Skills (comma-separated)")
 hours = st.slider("Weekly Learning Hours Available", 1, 40, 10)
 
 # ================= GENERATE =================
+# ================= GENERATE =================
+
+if "report_generated" not in st.session_state:
+    st.session_state.report_generated = False
+
 if st.button("🔎 Generate Career Intelligence Plan", use_container_width=True):
+    st.session_state.report_generated = True
+
+if st.session_state.report_generated:
 
     if not name or not skills_input:
         st.warning("Please enter your name and skills.")
@@ -280,9 +288,11 @@ if st.button("🔎 Generate Career Intelligence Plan", use_container_width=True)
         if st.button("Submit Feedback"):
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+            # Local Save
             with open("feedback_log.txt", "a") as f:
                 f.write(f"{timestamp} | {name} | {rating} | {education} | {skills_input} | {feedback_text}\n")
 
+            # Google Sheet Save
             save_feedback_to_sheet([
                 timestamp,
                 name,
@@ -292,7 +302,7 @@ if st.button("🔎 Generate Career Intelligence Plan", use_container_width=True)
                 feedback_text
             ])
 
-            st.success("Thank you for feedback!")
+            st.success("✅ Feedback successfully saved!")
 
 # ================= ADMIN DASHBOARD =================
 if st.session_state.admin_logged:
@@ -313,3 +323,4 @@ if st.session_state.admin_logged:
             st.sidebar.text_area("Feedback Logs", logs, height=300)
         except:
             st.sidebar.info("No feedback yet.")
+

@@ -121,7 +121,6 @@ def gemini_generate(prompt):
         )
 
         result = response.choices[0].message.content.strip()
-
         log_api_usage("Groq Call", "SUCCESS")
         return result
 
@@ -129,7 +128,10 @@ def gemini_generate(prompt):
         log_api_usage("Groq Call", f"FAILED: {str(e)}")
         return None
 
+# ==========================================================
 # ================= DYNAMIC DOMAIN DETECTION =================
+# ==========================================================
+
 def detect_domain(skills):
     prompt = f"""
 You are an expert technology domain classifier.
@@ -144,28 +146,19 @@ Return ONLY the domain name.
     domain = gemini_generate(prompt)
     return domain if domain else "Technology Domain"
 
-# ================= GOOGLE SHEET SAVE =================
+# ==========================================================
+# ================= GOOGLE SHEET SAVE (UPDATED) =================
+# ==========================================================
+
 def save_feedback_to_sheet(data_row):
     try:
-        # FIRST try Streamlit secrets
-        creds_json = None
-
-        if "GOOGLE_SERVICE_ACCOUNT_JSON" in st.secrets:
-            creds_json = st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"]
-        else:
-            creds_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
-
-        if not creds_json:
-            log_api_usage("GoogleSheet Save", "NO_CREDENTIALS")
-            st.error("Google credentials not found.")
-            return
-
-        creds_dict = json.loads(creds_json)
-
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
+
+        # ✅ UPDATED: Read from Streamlit Secrets (TOML)
+        creds_dict = st.secrets["GOOGLE_SERVICE_ACCOUNT"]
 
         credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         client_gs = gspread.authorize(credentials)
@@ -179,8 +172,10 @@ def save_feedback_to_sheet(data_row):
         log_api_usage("GoogleSheet Save", f"FAILED: {str(e)}")
         st.error(f"Google Sheet Error: {str(e)}")
 
-
+# ==========================================================
 # ================= ROLE & GROWTH =================
+# ==========================================================
+
 def infer_career_role(skills):
     domain = detect_domain(skills)
 
@@ -229,7 +224,10 @@ Return comma-separated names only.
 
     return [c.strip() for c in response.split(",")][:5]
 
+# ==========================================================
 # ================= USER INPUT =================
+# ==========================================================
+
 st.markdown("### 👤 Your Profile")
 
 col1, col2 = st.columns(2)
@@ -246,8 +244,9 @@ with col2:
 skills_input = st.text_input("Current Skills (comma-separated)")
 hours = st.slider("Weekly Learning Hours Available", 1, 40, 10)
 
+# ==========================================================
 # ================= GENERATE =================
-# ================= GENERATE =================
+# ==========================================================
 
 if "report_generated" not in st.session_state:
     st.session_state.report_generated = False
@@ -264,7 +263,6 @@ if st.session_state.report_generated:
         skills = [s.strip().lower() for s in skills_input.split(",") if s.strip()]
 
         with st.spinner("Analyzing your domain and future opportunities..."):
-
             role = infer_career_role(skills)
             growth_skills = infer_growth_plan(role, skills)
             certifications = infer_certifications(role, skills)
@@ -302,11 +300,9 @@ if st.session_state.report_generated:
         if st.button("Submit Feedback"):
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            # Local Save
             with open("feedback_log.txt", "a") as f:
                 f.write(f"{timestamp} | {name} | {rating} | {education} | {skills_input} | {feedback_text}\n")
 
-            # Google Sheet Save
             save_feedback_to_sheet([
                 timestamp,
                 name,
@@ -337,6 +333,3 @@ if st.session_state.admin_logged:
             st.sidebar.text_area("Feedback Logs", logs, height=300)
         except:
             st.sidebar.info("No feedback yet.")
-
-
-

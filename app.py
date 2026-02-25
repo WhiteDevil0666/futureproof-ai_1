@@ -79,8 +79,6 @@ if not api_key:
 
 client = Groq(api_key=api_key)
 GROQ_MODEL = "llama-3.1-8b-instant"
-
-# ✅ ADDED SECOND MODEL FOR MCQ
 MCQ_MODEL = "llama-3.3-70b-versatile"
 
 def log_api_usage(event_type, status):
@@ -105,7 +103,6 @@ def gemini_generate(prompt):
         log_api_usage("Groq Main Model", f"FAILED: {str(e)}")
         return None
 
-# ✅ ADDED SAFE MCQ GENERATOR
 def generate_mcq_questions(prompt):
     try:
         response = client.chat.completions.create(
@@ -118,10 +115,7 @@ def generate_mcq_questions(prompt):
         )
 
         raw_output = response.choices[0].message.content.strip()
-
-        # Clean JSON if model adds markdown
         raw_output = raw_output.replace("```json", "").replace("```", "").strip()
-
         questions = json.loads(raw_output)
 
         log_api_usage("Groq MCQ Model", "SUCCESS")
@@ -184,6 +178,52 @@ Return comma-separated names only.
     if not response:
         return []
     return [c.strip() for c in response.split(",")][:6]
+
+# ================= DYNAMIC CERTIFICATION PLATFORMS (ADDED) =================
+def generate_certification_platforms(role, skills):
+    domain = detect_domain(skills)
+
+    prompt = f"""
+Role: {role}
+Domain: {domain}
+Skills: {", ".join(skills)}
+
+Provide certification platforms relevant to this domain.
+
+Return ONLY valid JSON:
+
+{{
+ "free": [
+   {{"name":"Platform Name","url":"https://example.com"}}
+ ],
+ "paid": [
+   {{"name":"Platform Name","url":"https://example.com"}}
+ ]
+}}
+
+No explanation.
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": "Return strictly valid JSON only."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2
+        )
+
+        raw_output = response.choices[0].message.content.strip()
+        raw_output = raw_output.replace("```json", "").replace("```", "").strip()
+        data = json.loads(raw_output)
+
+        log_api_usage("Groq Certification Platforms", "SUCCESS")
+        return data
+
+    except Exception as e:
+        log_api_usage("Groq Certification Platforms", f"FAILED: {str(e)}")
+        return {"free": [], "paid": []}
 
 # ================= MARKET =================
 def generate_market_summary(role, skills):
@@ -282,6 +322,25 @@ if st.button("🔎 Analyze Skill Intelligence", use_container_width=True):
         for cert in certifications:
             st.markdown(f"- {cert}")
 
+        st.markdown("---")
+        st.markdown("### 🌐 Certification Platforms (Domain-Specific)")
+
+        platform_data = generate_certification_platforms(role, skills)
+
+        st.markdown("#### 🆓 Free Learning Platforms")
+        if platform_data.get("free"):
+            for item in platform_data["free"]:
+                st.markdown(f"- [{item['name']}]({item['url']})")
+        else:
+            st.markdown("No free platforms found.")
+
+        st.markdown("#### 💼 Paid / Market Recognized Certifications")
+        if platform_data.get("paid"):
+            for item in platform_data["paid"]:
+                st.markdown(f"- [{item['name']}]({item['url']})")
+        else:
+            st.markdown("No paid platforms found.")
+
     with tab4:
         st.markdown(market_summary)
 
@@ -312,7 +371,7 @@ if st.button("🔎 Analyze Skill Intelligence", use_container_width=True):
         st.success("✅ Feedback saved successfully!")
 
 # ==========================================================
-# ================= MOCK TEST MODULE (UPGRADED) ============
+# ================= MOCK TEST MODULE (UNCHANGED) ============
 # ==========================================================
 
 st.divider()

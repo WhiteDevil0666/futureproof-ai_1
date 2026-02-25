@@ -248,37 +248,10 @@ if st.button("🔎 Analyze Skill Intelligence", use_container_width=True):
             st.markdown(f"✔️ {skill}")
         st.markdown(f"⏳ Estimated Timeline: ~{weeks} weeks")
 
-    # ================= CERTIFICATION TAB RESTORED =================
     with tab3:
         st.markdown("### 🎓 Recommended Certifications")
-
-        free_platforms = {
-            "Coursera (Audit Free)": "https://www.coursera.org",
-            "edX (Audit Free)": "https://www.edx.org",
-            "Google Skillshop": "https://skillshop.withgoogle.com",
-            "Microsoft Learn": "https://learn.microsoft.com",
-            "AWS Skill Builder": "https://skillbuilder.aws"
-        }
-
-        paid_platforms = {
-            "AWS Certification": "https://aws.amazon.com/certification/",
-            "Microsoft Certification": "https://learn.microsoft.com/en-us/certifications/",
-            "Cisco Certification": "https://www.cisco.com/c/en/us/training-events/training-certifications.html",
-            "Oracle Certification": "https://education.oracle.com",
-            "PMI Certification": "https://www.pmi.org/certifications"
-        }
-
-        st.markdown("#### 📘 Certification Names")
         for cert in certifications:
             st.markdown(f"- {cert}")
-
-        st.markdown("#### 🆓 Free Learning Platforms")
-        for name, link in free_platforms.items():
-            st.markdown(f"[{name}]({link})")
-
-        st.markdown("#### 💼 Paid / Market Recognized Certifications")
-        for name, link in paid_platforms.items():
-            st.markdown(f"[{name}]({link})")
 
     with tab4:
         st.markdown(market_summary)
@@ -308,3 +281,83 @@ if st.button("🔎 Analyze Skill Intelligence", use_container_width=True):
         ])
 
         st.success("✅ Feedback saved successfully!")
+
+# ==========================================================
+# ================= MOCK TEST MODULE (ADDED ONLY) ==========
+# ==========================================================
+
+st.divider()
+st.markdown("## 🎓 Skill-Based Mock Assessment")
+
+if "mock_questions" not in st.session_state:
+    st.session_state.mock_questions = []
+
+if "mock_generated" not in st.session_state:
+    st.session_state.mock_generated = False
+
+difficulty = st.selectbox(
+    "Select Difficulty Level",
+    ["Beginner", "Intermediate", "Expert"]
+)
+
+if st.button("Generate 10 MCQs"):
+
+    skills = [s.strip().lower() for s in skills_input.split(",") if s.strip()]
+
+    prompt = f"""
+Create 10 MCQs based strictly on these skills:
+{", ".join(skills)}
+
+Difficulty: {difficulty}
+
+Return strict JSON:
+
+[
+ {{
+  "question": "...",
+  "options": ["A", "B", "C", "D"],
+  "answer": "Correct Option Text"
+ }}
+]
+No explanation.
+"""
+
+    response = gemini_generate(prompt)
+
+    try:
+        questions = json.loads(response)
+        st.session_state.mock_questions = questions
+        st.session_state.mock_generated = True
+    except:
+        st.error("Failed to generate structured questions. Try again.")
+
+if st.session_state.mock_generated:
+
+    user_answers = []
+
+    for idx, q in enumerate(st.session_state.mock_questions):
+        st.markdown(f"**Q{idx+1}. {q['question']}**")
+        selected = st.radio(
+            "",
+            q["options"],
+            key=f"mock_{idx}"
+        )
+        user_answers.append(selected)
+
+    if st.button("Submit Mock Test"):
+
+        score = 0
+        for i, q in enumerate(st.session_state.mock_questions):
+            if user_answers[i] == q["answer"]:
+                score += 1
+
+        percentage = (score / 10) * 100
+
+        st.markdown("### 📊 Result")
+        st.markdown(f"Score: {score}/10")
+        st.markdown(f"Percentage: {percentage}%")
+
+        if percentage >= 80:
+            st.success("✅ Qualified (80%+)")
+        else:
+            st.error("❌ Not Qualified (Below 80%)")

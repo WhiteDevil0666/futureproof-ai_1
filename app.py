@@ -80,6 +80,9 @@ if not api_key:
 client = Groq(api_key=api_key)
 GROQ_MODEL = "llama-3.1-8b-instant"
 
+# ✅ ADDED SECOND MODEL FOR MCQ
+MCQ_MODEL = "llama-3.3-70b-versatile"
+
 def log_api_usage(event_type, status):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open("api_usage_log.txt", "a") as f:
@@ -96,10 +99,36 @@ def gemini_generate(prompt):
             temperature=0.3
         )
         result = response.choices[0].message.content.strip()
-        log_api_usage("Groq Call", "SUCCESS")
+        log_api_usage("Groq Main Model", "SUCCESS")
         return result
     except Exception as e:
-        log_api_usage("Groq Call", f"FAILED: {str(e)}")
+        log_api_usage("Groq Main Model", f"FAILED: {str(e)}")
+        return None
+
+# ✅ ADDED SAFE MCQ GENERATOR
+def generate_mcq_questions(prompt):
+    try:
+        response = client.chat.completions.create(
+            model=MCQ_MODEL,
+            messages=[
+                {"role": "system", "content": "Return ONLY valid JSON array. No explanation."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2
+        )
+
+        raw_output = response.choices[0].message.content.strip()
+
+        # Clean JSON if model adds markdown
+        raw_output = raw_output.replace("```json", "").replace("```", "").strip()
+
+        questions = json.loads(raw_output)
+
+        log_api_usage("Groq MCQ Model", "SUCCESS")
+        return questions
+
+    except Exception as e:
+        log_api_usage("Groq MCQ Model", f"FAILED: {str(e)}")
         return None
 
 # ================= DOMAIN =================
@@ -283,7 +312,7 @@ if st.button("🔎 Analyze Skill Intelligence", use_container_width=True):
         st.success("✅ Feedback saved successfully!")
 
 # ==========================================================
-# ================= MOCK TEST MODULE (ADDED ONLY) ==========
+# ================= MOCK TEST MODULE (UPGRADED) ============
 # ==========================================================
 
 st.divider()
@@ -305,13 +334,11 @@ if st.button("Generate 10 MCQs"):
     skills = [s.strip().lower() for s in skills_input.split(",") if s.strip()]
 
     prompt = f"""
-Create 10 MCQs based strictly on these skills:
-{", ".join(skills)}
-
+Create 10 multiple choice questions.
+Skills: {", ".join(skills)}
 Difficulty: {difficulty}
 
-Return strict JSON:
-
+Return ONLY valid JSON array:
 [
  {{
   "question": "...",
@@ -319,16 +346,14 @@ Return strict JSON:
   "answer": "Correct Option Text"
  }}
 ]
-No explanation.
 """
 
-    response = gemini_generate(prompt)
+    questions = generate_mcq_questions(prompt)
 
-    try:
-        questions = json.loads(response)
+    if questions:
         st.session_state.mock_questions = questions
         st.session_state.mock_generated = True
-    except:
+    else:
         st.error("Failed to generate structured questions. Try again.")
 
 if st.session_state.mock_generated:

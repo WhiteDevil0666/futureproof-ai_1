@@ -28,14 +28,13 @@ st.set_page_config(
     layout="wide"
 )
 
-# ================= UI THEME =================
 st.markdown("""
 <style>
 
 /* ================= APP BACKGROUND ================= */
 .stApp {
     background: linear-gradient(135deg, #0f172a, #1e293b);
-    color: white;
+    color: #f3f4f6;
 }
 
 /* ================= SIDEBAR ================= */
@@ -44,32 +43,44 @@ section[data-testid="stSidebar"] {
     color: white !important;
 }
 
-/* ================= INPUT FIELDS FIX ================= */
-
-/* Text Input */
-div[data-testid="stTextInput"] input {
-    background-color: #1f2937 !important;
-    color: white !important;
-    border-radius: 8px !important;
-    border: 1px solid #374151 !important;
+/* Sidebar Radio Text */
+section[data-testid="stSidebar"] .stRadio label {
+    color: #e5e7eb !important;
+    font-size: 15px !important;
+    font-weight: 500 !important;
 }
 
-/* Selectbox */
+/* Active Sidebar Selection */
+section[data-testid="stSidebar"] .stRadio div[aria-checked="true"] {
+    background-color: rgba(99,102,241,0.15) !important;
+    border-radius: 8px;
+}
+
+/* ================= MAIN RADIO BUTTON TEXT FIX ================= */
+div[data-testid="stRadio"] label {
+    color: #f9fafb !important;
+    font-size: 16px !important;
+    font-weight: 500 !important;
+}
+
+/* Radio circle visibility */
+div[data-testid="stRadio"] span {
+    border-color: #9ca3af !important;
+}
+
+/* ================= QUESTION HEADINGS ================= */
+h1, h2, h3, h4 {
+    color: #ffffff !important;
+}
+
+/* ================= INPUT FIELDS ================= */
+div[data-testid="stTextInput"] input,
+div[data-testid="stTextArea"] textarea,
 div[data-testid="stSelectbox"] div {
     background-color: #1f2937 !important;
     color: white !important;
     border-radius: 8px !important;
     border: 1px solid #374151 !important;
-}
-
-/* Slider */
-div[data-testid="stSlider"] > div {
-    background-color: transparent !important;
-}
-
-/* Radio Buttons */
-div[data-testid="stRadio"] label {
-    color: white !important;
 }
 
 /* ================= BUTTON ================= */
@@ -82,7 +93,7 @@ div[data-testid="stRadio"] label {
     border: none;
 }
 
-/* ================= FIX LABEL VISIBILITY ================= */
+/* ================= GENERAL LABEL FIX ================= */
 label {
     color: #e5e7eb !important;
     font-weight: 500;
@@ -508,6 +519,7 @@ elif page == "🔐 Admin Portal":
         else:
             st.error("❌ Invalid Admin Credentials")        
         
+
 
 
 

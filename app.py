@@ -31,41 +31,40 @@ st.set_page_config(
 st.markdown("""
 <style>
 
-/* ================= APP BACKGROUND ================= */
-.stApp {
-    background: linear-gradient(135deg, #0f172a, #1e293b);
-    color: #f3f4f6;
+st.markdown("""
+<style>
+
+/* ================= GLOBAL TEXT ================= */
+html, body, [class*="css"] {
+    color: #ffffff !important;
 }
 
 /* ================= SIDEBAR ================= */
 section[data-testid="stSidebar"] {
     background-color: #0b1220 !important;
-    color: white !important;
 }
 
-/* Sidebar Radio Text */
-section[data-testid="stSidebar"] .stRadio label {
-    color: #e5e7eb !important;
-    font-size: 15px !important;
-    font-weight: 500 !important;
+/* Sidebar text */
+section[data-testid="stSidebar"] * {
+    color: #ffffff !important;
 }
 
-/* Active Sidebar Selection */
-section[data-testid="stSidebar"] .stRadio div[aria-checked="true"] {
-    background-color: rgba(99,102,241,0.15) !important;
+/* Active sidebar selection highlight */
+section[data-testid="stSidebar"] div[aria-checked="true"] {
+    background-color: rgba(99,102,241,0.25) !important;
     border-radius: 8px;
 }
 
-/* ================= MAIN RADIO BUTTON TEXT FIX ================= */
-div[data-testid="stRadio"] label {
-    color: #f9fafb !important;
-    font-size: 16px !important;
-    font-weight: 500 !important;
+/* ================= RADIO OPTIONS (MAIN FIX) ================= */
+
+/* Force ALL radio option text white */
+div[data-testid="stRadio"] * {
+    color: #ffffff !important;
 }
 
-/* Radio circle visibility */
+/* Make radio circles visible */
 div[data-testid="stRadio"] span {
-    border-color: #9ca3af !important;
+    border-color: #ffffff !important;
 }
 
 /* ================= QUESTION HEADINGS ================= */
@@ -80,22 +79,22 @@ div[data-testid="stSelectbox"] div {
     background-color: #1f2937 !important;
     color: white !important;
     border-radius: 8px !important;
-    border: 1px solid #374151 !important;
+    border: 1px solid #4b5563 !important;
 }
 
 /* ================= BUTTON ================= */
 .stButton>button {
     background: linear-gradient(90deg, #6366f1, #3b82f6);
-    color: white;
+    color: white !important;
     border-radius: 10px;
     height: 3em;
     font-weight: 600;
     border: none;
 }
 
-/* ================= GENERAL LABEL FIX ================= */
+/* ================= LABELS ================= */
 label {
-    color: #e5e7eb !important;
+    color: #ffffff !important;
     font-weight: 500;
 }
 
@@ -519,6 +518,7 @@ elif page == "🔐 Admin Portal":
         else:
             st.error("❌ Invalid Admin Credentials")        
         
+
 
 
 

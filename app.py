@@ -31,19 +31,48 @@ st.set_page_config(
 # ================= UI THEME =================
 st.markdown("""
 <style>
+
+/* ================= APP BACKGROUND ================= */
 .stApp {
     background: linear-gradient(135deg, #0f172a, #1e293b);
     color: white;
 }
+
+/* ================= SIDEBAR ================= */
 section[data-testid="stSidebar"] {
     background-color: #0b1220 !important;
     color: white !important;
 }
-section[data-testid="stSidebar"] .stRadio > label {
-    font-size: 16px;
-    font-weight: 600;
+
+/* ================= INPUT FIELDS FIX ================= */
+
+/* Text Input */
+div[data-testid="stTextInput"] input {
+    background-color: #1f2937 !important;
+    color: white !important;
+    border-radius: 8px !important;
+    border: 1px solid #374151 !important;
 }
-label { color: white !important; font-weight: 500; }
+
+/* Selectbox */
+div[data-testid="stSelectbox"] div {
+    background-color: #1f2937 !important;
+    color: white !important;
+    border-radius: 8px !important;
+    border: 1px solid #374151 !important;
+}
+
+/* Slider */
+div[data-testid="stSlider"] > div {
+    background-color: transparent !important;
+}
+
+/* Radio Buttons */
+div[data-testid="stRadio"] label {
+    color: white !important;
+}
+
+/* ================= BUTTON ================= */
 .stButton>button {
     background: linear-gradient(90deg, #6366f1, #3b82f6);
     color: white;
@@ -52,9 +81,15 @@ label { color: white !important; font-weight: 500; }
     font-weight: 600;
     border: none;
 }
+
+/* ================= FIX LABEL VISIBILITY ================= */
+label {
+    color: #e5e7eb !important;
+    font-weight: 500;
+}
+
 </style>
 """, unsafe_allow_html=True)
-
 st.markdown('<div class="main-title">🚀 FutureProof Skill Intelligence Engine</div>', unsafe_allow_html=True)
 st.caption("Analyze Your Skills. Understand Your Domain. Evaluate Market Reality.")
 
@@ -473,5 +508,6 @@ elif page == "🔐 Admin Portal":
         else:
             st.error("❌ Invalid Admin Credentials")        
         
+
 
 

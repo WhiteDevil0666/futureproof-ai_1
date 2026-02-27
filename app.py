@@ -1,6 +1,7 @@
 # ==========================================================
 # FUTUREPROOF AI – Production Optimized Version
 # Full Original Structure Restored + Mock Separated
+# + Admin Portal Added (No Logic Removed)
 # ==========================================================
 
 import streamlit as st
@@ -35,8 +36,12 @@ st.markdown("""
     color: white;
 }
 section[data-testid="stSidebar"] {
-    background-color: #111827 !important;
+    background-color: #0b1220 !important;
     color: white !important;
+}
+section[data-testid="stSidebar"] .stRadio > label {
+    font-size: 16px;
+    font-weight: 600;
 }
 label { color: white !important; font-weight: 500; }
 .stButton>button {
@@ -65,6 +70,15 @@ if not api_key:
 client = Groq(api_key=api_key)
 MAIN_MODEL = "llama-3.1-8b-instant"
 MCQ_MODEL = "llama-3.3-70b-versatile"
+
+# ================= SIDEBAR NAVIGATION =================
+
+st.sidebar.markdown("## 📌 Navigation")
+
+page = st.sidebar.radio(
+    "",
+    ["🔎 Skill Intelligence", "🎓 Mock Assessment", "🔐 Admin Portal"]
+)
 
 # ================= UTILITIES =================
 
@@ -263,14 +277,6 @@ def save_mock_result(data_row):
         sheet.append_row(data_row)
     except Exception as e:
         st.error(f"Mock Sheet Error: {str(e)}")
-
-# ================= SIDEBAR NAVIGATION =================
-
-page = st.sidebar.radio(
-    "Navigation",
-    ["🔎 Skill Intelligence", "🎓 Mock Assessment"]
-)
-
 # ==========================================================
 # ================= SKILL INTELLIGENCE =====================
 # ==========================================================
@@ -392,6 +398,8 @@ elif page == "🎓 Mock Assessment":
         questions = generate_mcqs(skills, difficulty)
         if questions:
             st.session_state.mock_questions = questions
+        else:
+            st.error("Failed to generate test questions.")
 
     if st.session_state.mock_questions:
 
@@ -400,7 +408,12 @@ elif page == "🎓 Mock Assessment":
 
         for i, q in enumerate(st.session_state.mock_questions):
             st.markdown(f"### Q{i+1}. {q['question']}")
-            selected = st.radio("", q["options"], index=None, key=f"mock_{i}")
+            selected = st.radio(
+                "",
+                q["options"],
+                index=None,
+                key=f"mock_{i}"
+            )
             user_answers.append(selected)
 
         if st.button("Submit Test"):
@@ -411,8 +424,14 @@ elif page == "🎓 Mock Assessment":
 
             percent = (score / len(st.session_state.mock_questions)) * 100
 
+            st.markdown("## 📊 Test Result")
             st.markdown(f"### Score: {score}/10")
             st.markdown(f"### Percentage: {percent:.2f}%")
+
+            if percent >= 80:
+                st.success("✅ Qualified (80%+)")
+            else:
+                st.error("❌ Not Qualified (Below 80%)")
 
             save_mock_result([
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -424,3 +443,34 @@ elif page == "🎓 Mock Assessment":
                 score,
                 percent
             ])
+
+# ==========================================================
+# ================= ADMIN PORTAL ===========================
+# ==========================================================
+
+elif page == "🔐 Admin Portal":
+
+    st.header("🔐 Admin Portal")
+
+    username = st.text_input("Admin Username")
+    password = st.text_input("Admin Password", type="password")
+
+    if st.button("Login"):
+
+        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+            st.success("✅ Admin Logged In")
+
+            st.markdown("### 📊 System Logs")
+            if os.path.exists("api_usage_log.txt"):
+                with open("api_usage_log.txt", "r") as f:
+                    logs = f.read()
+                st.text_area("API Usage Logs", logs, height=300)
+
+            if os.path.exists("feedback_log.txt"):
+                with open("feedback_log.txt", "r") as f:
+                    feedback_logs = f.read()
+                st.text_area("Feedback Logs", feedback_logs, height=300)
+
+        else:
+            st.error("❌ Invalid Admin Credentials")        
+        

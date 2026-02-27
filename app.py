@@ -32,9 +32,15 @@ st.set_page_config(
 st.markdown("""
 <style>
 
-/* ================= GLOBAL TEXT ================= */
-html, body, [class*="css"] {
-    color: #ffffff !important;
+/* ================= MAIN APP BACKGROUND ================= */
+.stApp {
+    background: linear-gradient(135deg, #0f172a, #1e293b);
+    color: #ffffff;
+}
+
+/* Fix main content area background */
+section.main > div {
+    background-color: transparent !important;
 }
 
 /* ================= SIDEBAR ================= */
@@ -42,30 +48,14 @@ section[data-testid="stSidebar"] {
     background-color: #0b1220 !important;
 }
 
-/* Sidebar text */
 section[data-testid="stSidebar"] * {
     color: #ffffff !important;
 }
 
-/* Active sidebar selection highlight */
-section[data-testid="stSidebar"] div[aria-checked="true"] {
-    background-color: rgba(99,102,241,0.25) !important;
-    border-radius: 8px;
-}
-
 /* ================= RADIO OPTIONS ================= */
-div[data-testid="stRadio"] * {
+div[data-testid="stRadio"] label {
     color: #ffffff !important;
-}
-
-/* Radio circle */
-div[data-testid="stRadio"] span {
-    border-color: #ffffff !important;
-}
-
-/* ================= QUESTION HEADINGS ================= */
-h1, h2, h3, h4 {
-    color: #ffffff !important;
+    font-weight: 500;
 }
 
 /* ================= INPUT FIELDS ================= */
@@ -73,7 +63,7 @@ div[data-testid="stTextInput"] input,
 div[data-testid="stTextArea"] textarea,
 div[data-testid="stSelectbox"] div {
     background-color: #1f2937 !important;
-    color: white !important;
+    color: #ffffff !important;
     border-radius: 8px !important;
     border: 1px solid #4b5563 !important;
 }
@@ -88,10 +78,9 @@ div[data-testid="stSelectbox"] div {
     border: none;
 }
 
-/* ================= LABELS ================= */
-label {
+/* ================= HEADINGS ================= */
+h1, h2, h3, h4 {
     color: #ffffff !important;
-    font-weight: 500;
 }
 
 </style>
@@ -514,6 +503,7 @@ elif page == "🔐 Admin Portal":
         else:
             st.error("❌ Invalid Admin Credentials")        
         
+
 
 
 

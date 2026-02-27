@@ -317,6 +317,23 @@ if st.button("🔎 Analyze Skill Intelligence", use_container_width=True):
 st.divider()
 st.header("🎓 Skill-Based Mock Assessment")
 
+# ---------- UI FIX (Remove Transparency) ----------
+st.markdown("""
+<style>
+div[data-testid="stRadio"] > label {
+    background-color: #1f2937;
+    padding: 10px;
+    border-radius: 8px;
+    margin-bottom: 6px;
+    display: block;
+    border: 1px solid #374151;
+}
+div[data-testid="stRadio"] > label:hover {
+    background-color: #374151;
+}
+</style>
+""", unsafe_allow_html=True)
+
 difficulty = st.selectbox(
     "Select Difficulty",
     ["Beginner", "Intermediate", "Expert"]
@@ -325,35 +342,100 @@ difficulty = st.selectbox(
 if "mock_questions" not in st.session_state:
     st.session_state.mock_questions = []
 
+if "mock_submitted" not in st.session_state:
+    st.session_state.mock_submitted = False
+
+# ---------- HARDER QUESTION PROMPT ----------
+def generate_mcqs(skills, difficulty):
+    prompt = f"""
+Create 10 advanced multiple choice questions.
+
+Skills: {", ".join(skills)}
+Difficulty: {difficulty}
+
+Rules:
+- Avoid basic general knowledge.
+- Questions must test applied understanding.
+- Include scenario-based and analytical thinking.
+- Options must be plausible and competitive.
+- Do NOT make easy textbook questions.
+
+Return ONLY valid JSON:
+[
+ {{
+   "question": "...",
+   "options": ["A", "B", "C", "D"],
+   "answer": "Correct Option Text"
+ }}
+]
+"""
+    response = safe_llm_call(
+        MCQ_MODEL,
+        [
+            {"role": "system", "content": "Return only valid JSON array."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.4
+    )
+
+    return safe_json_load(response)
+
+# ---------- Generate Button ----------
 if st.button("Generate 10 MCQs"):
     skills = normalize_skills(skills_input)
     questions = generate_mcqs(skills, difficulty)
 
     if questions:
         st.session_state.mock_questions = questions
+        st.session_state.mock_submitted = False
     else:
         st.error("Failed to generate MCQs.")
 
+# ---------- Display Questions ----------
 if st.session_state.mock_questions:
-    score = 0
+
     user_answers = []
+    score = 0
 
     for i, q in enumerate(st.session_state.mock_questions):
-        st.markdown(f"**Q{i+1}. {q['question']}**")
-        ans = st.radio("", q["options"], key=f"q{i}")
-        user_answers.append(ans)
+        st.markdown(f"### Q{i+1}. {q['question']}")
+
+        selected = st.radio(
+            "",
+            q["options"],
+            index=None,   # 🔥 No default selection
+            key=f"q{i}"
+        )
+
+        user_answers.append(selected)
 
     if st.button("Submit Mock Test"):
+        st.session_state.mock_submitted = True
+
         for i, q in enumerate(st.session_state.mock_questions):
             if user_answers[i] == q["answer"]:
                 score += 1
 
-        percent = (score / 10) * 100
+        percent = (score / len(st.session_state.mock_questions)) * 100
 
-        st.markdown(f"Score: {score}/10")
-        st.markdown(f"Percentage: {percent}%")
+        st.markdown("## 📊 Detailed Result")
+        st.markdown(f"### Score: {score}/10")
+        st.markdown(f"### Percentage: {percent:.2f}%")
 
         if percent >= 80:
             st.success("✅ Qualified (80%+)")
         else:
             st.error("❌ Not Qualified (Below 80%)")
+
+        st.divider()
+
+        # ---------- Detailed Answer Breakdown ----------
+        for i, q in enumerate(st.session_state.mock_questions):
+
+            if user_answers[i] == q["answer"]:
+                st.markdown(f"✅ **Q{i+1} Correct**")
+            else:
+                st.markdown(f"❌ **Q{i+1} Incorrect**")
+                st.markdown(f"**Your Answer:** {user_answers[i]}")
+                st.markdown(f"**Correct Answer:** {q['answer']}")
+            st.markdown("---")

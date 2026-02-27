@@ -1,5 +1,5 @@
 # ==========================================================
-# FUTUREPROOF AI – Production Optimized (Client Version)
+# FUTUREPROOF AI – Production Optimized Version
 # Full Logic Preserved | Mock Separated | Production Safe
 # ==========================================================
 
@@ -26,6 +26,32 @@ st.set_page_config(
     page_icon="🚀",
     layout="wide"
 )
+
+# ================= UI THEME =================
+st.markdown("""
+<style>
+.stApp {
+    background: linear-gradient(135deg, #0f172a, #1e293b);
+    color: white;
+}
+section[data-testid="stSidebar"] {
+    background-color: #111827 !important;
+    color: white !important;
+}
+label { color: white !important; font-weight: 500; }
+.stButton>button {
+    background: linear-gradient(90deg, #6366f1, #3b82f6);
+    color: white;
+    border-radius: 10px;
+    height: 3em;
+    font-weight: 600;
+    border: none;
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown('<div class="main-title">🚀 FutureProof Skill Intelligence Engine</div>', unsafe_allow_html=True)
+st.caption("Analyze Your Skills. Understand Your Domain. Evaluate Market Reality.")
 
 # ================= ENV CONFIG =================
 ADMIN_USERNAME = os.getenv("ADMIN_USER")
@@ -83,13 +109,10 @@ Based strictly on these skills:
 {", ".join(skills_tuple)}
 Return only the professional domain name.
 """
-    return safe_llm_call(
-        MAIN_MODEL,
-        [
-            {"role": "system", "content": "Return only domain name."},
-            {"role": "user", "content": prompt}
-        ]
-    ) or "General Domain"
+    return safe_llm_call(MAIN_MODEL, [
+        {"role": "system", "content": "Return only domain name."},
+        {"role": "user", "content": prompt}
+    ]) or "General Domain"
 
 @st.cache_data(ttl=3600)
 def infer_role_cached(skills_tuple, domain):
@@ -98,13 +121,10 @@ Skills: {", ".join(skills_tuple)}
 Domain: {domain}
 Return only one realistic professional role.
 """
-    return safe_llm_call(
-        MAIN_MODEL,
-        [
-            {"role": "system", "content": "Return only role name."},
-            {"role": "user", "content": prompt}
-        ]
-    ) or "Specialist"
+    return safe_llm_call(MAIN_MODEL, [
+        {"role": "system", "content": "Return only role name."},
+        {"role": "user", "content": prompt}
+    ]) or "Specialist"
 
 # ================= CORE FUNCTIONS =================
 
@@ -204,22 +224,19 @@ Return ONLY valid JSON:
     )
     return safe_json_load(response)
 
-# ================= GOOGLE SHEETS =================
-
-def get_gspread_client():
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
-    creds = Credentials.from_service_account_info(
-        st.secrets["GOOGLE_SERVICE_ACCOUNT"],
-        scopes=scopes
-    )
-    return gspread.authorize(creds)
+# ================= GOOGLE SHEET =================
 
 def save_feedback(data_row):
     try:
-        client_gs = get_gspread_client()
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        creds = Credentials.from_service_account_info(
+            st.secrets["GOOGLE_SERVICE_ACCOUNT"],
+            scopes=scopes
+        )
+        client_gs = gspread.authorize(creds)
         sheet = client_gs.open("FutureProof_Feedback").sheet1
         sheet.append_row(data_row)
     except Exception as e:
@@ -227,11 +244,21 @@ def save_feedback(data_row):
 
 def save_mock_result(data_row):
     try:
-        client_gs = get_gspread_client()
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        creds = Credentials.from_service_account_info(
+            st.secrets["GOOGLE_SERVICE_ACCOUNT"],
+            scopes=scopes
+        )
+        client_gs = gspread.authorize(creds)
+
         try:
             sheet = client_gs.open("FutureProof_Mock_Results").sheet1
         except:
             sheet = client_gs.create("FutureProof_Mock_Results").sheet1
+
         sheet.append_row(data_row)
     except Exception as e:
         st.error(f"Mock Sheet Error: {str(e)}")
@@ -249,8 +276,6 @@ page = st.sidebar.radio(
 # ==========================================================
 
 if page == "🔎 Skill Intelligence":
-
-    st.title("🚀 FutureProof Skill Intelligence Engine")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -311,7 +336,7 @@ if page == "🔎 Skill Intelligence":
 
 elif page == "🎓 Mock Assessment":
 
-    st.title("🎓 Skill-Based Mock Assessment")
+    st.header("🎓 Skill-Based Mock Assessment")
 
     candidate_name = st.text_input("Full Name")
     candidate_email = st.text_input("Email")
@@ -365,3 +390,18 @@ elif page == "🎓 Mock Assessment":
                 score,
                 percent
             ])
+
+# ==========================================================
+# ================= ADMIN ================================
+# ==========================================================
+
+elif page == "🔐 Admin":
+
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+
+    if st.button("Login"):
+        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+            st.success("Admin logged in")
+        else:
+            st.error("Invalid credentials")

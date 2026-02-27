@@ -53,9 +53,27 @@ section[data-testid="stSidebar"] * {
 }
 
 /* ================= RADIO OPTIONS ================= */
+/* Force radio label text white */
+div[data-testid="stRadio"] label p {
+    color: #ffffff !important;
+    font-weight: 500 !important;
+    opacity: 1 !important;
+}
+
+/* Force radio container text white */
 div[data-testid="stRadio"] label {
     color: #ffffff !important;
-    font-weight: 500;
+    opacity: 1 !important;
+}
+
+/* Fix disabled/low-opacity issue */
+div[data-testid="stRadio"] div {
+    opacity: 1 !important;
+}
+
+/* Make radio circle border visible */
+div[data-testid="stRadio"] span {
+    border-color: #ffffff !important;
 }
 
 /* ================= INPUT FIELDS ================= */
@@ -503,6 +521,7 @@ elif page == "🔐 Admin Portal":
         else:
             st.error("❌ Invalid Admin Credentials")        
         
+
 
 
 

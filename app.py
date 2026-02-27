@@ -1,6 +1,6 @@
 # ==========================================================
 # FUTUREPROOF AI – Production Optimized Version
-# Full Logic Preserved | Mock Separated | Production Safe
+# Full Original Structure Restored + Mock Separated
 # ==========================================================
 
 import streamlit as st
@@ -63,7 +63,6 @@ if not api_key:
     st.stop()
 
 client = Groq(api_key=api_key)
-
 MAIN_MODEL = "llama-3.1-8b-instant"
 MCQ_MODEL = "llama-3.3-70b-versatile"
 
@@ -105,12 +104,17 @@ def normalize_skills(skills_input):
 @st.cache_data(ttl=3600)
 def detect_domain_cached(skills_tuple):
     prompt = f"""
-Based strictly on these skills:
+You are a career classification engine.
+
+Given these professional skills:
 {", ".join(skills_tuple)}
-Return only the professional domain name.
+
+Identify the professional career field (e.g., Data Analytics, Software Engineering, Cybersecurity, Finance, Marketing).
+
+Return ONLY the domain name.
 """
     return safe_llm_call(MAIN_MODEL, [
-        {"role": "system", "content": "Return only domain name."},
+        {"role": "system", "content": "Classify career domain only."},
         {"role": "user", "content": prompt}
     ]) or "General Domain"
 
@@ -119,7 +123,9 @@ def infer_role_cached(skills_tuple, domain):
     prompt = f"""
 Skills: {", ".join(skills_tuple)}
 Domain: {domain}
-Return only one realistic professional role.
+
+Suggest one realistic professional role aligned with this domain.
+Return only role name.
 """
     return safe_llm_call(MAIN_MODEL, [
         {"role": "system", "content": "Return only role name."},
@@ -132,36 +138,68 @@ def generate_growth(role, domain):
     prompt = f"""
 Role: {role}
 Domain: {domain}
-Suggest 6 competitive skills. Return comma-separated.
+Suggest 6 skills that increase competitiveness.
+Return comma-separated only.
 """
     response = safe_llm_call(MAIN_MODEL, [{"role": "user", "content": prompt}])
     if not response:
         return []
-    return [s.strip().title() for s in re.split(r",|\n", response) if s.strip()][:6]
+    raw = re.split(r",|\n", response)
+    return [s.strip().title() for s in raw if s.strip()][:6]
 
 def generate_certifications(role, domain):
     prompt = f"""
 Role: {role}
 Domain: {domain}
-Suggest 6 globally recognized certifications. Return comma-separated.
+Suggest 6 globally recognized certifications.
+Return comma-separated names only.
 """
     response = safe_llm_call(MAIN_MODEL, [{"role": "user", "content": prompt}])
     if not response:
         return []
     return [c.strip() for c in response.split(",")][:6]
 
+def generate_platforms(role, domain, skills):
+    prompt = f"""
+Role: {role}
+Domain: {domain}
+Skills: {", ".join(skills)}
+
+Provide certification platforms relevant to this domain.
+
+Return ONLY valid JSON:
+{{
+ "free": [
+   {{"name":"Platform Name","url":"https://example.com"}}
+ ],
+ "paid": [
+   {{"name":"Platform Name","url":"https://example.com"}}
+ ]
+}}
+"""
+    response = safe_llm_call(
+        MAIN_MODEL,
+        [
+            {"role": "system", "content": "Return strictly valid JSON only."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.2
+    )
+    return safe_json_load(response) or {"free": [], "paid": []}
+
 def generate_market(role, domain):
     prompt = f"""
 Role: {role}
 Domain: {domain}
-Explain demand, hiring scale, 3-5 year outlook, job availability.
+Explain demand level, hiring scale, 3-5 year outlook, job availability.
 """
-    return safe_llm_call(MAIN_MODEL, [{"role": "user", "content": prompt}]) or "Market unavailable."
+    return safe_llm_call(MAIN_MODEL, [{"role": "user", "content": prompt}]) or "Market data unavailable."
 
 def generate_confidence(role, domain):
     prompt = f"""
 Role: {role}
 Domain: {domain}
+
 Provide:
 Confidence: X%
 Risk: Low/Medium/High
@@ -170,54 +208,19 @@ Summary:
     return safe_llm_call(MAIN_MODEL, [{"role": "user", "content": prompt}]) or \
            "Confidence: 70%\nRisk: Medium\nSummary: Moderate outlook."
 
-def generate_platforms(role, domain, skills):
-    prompt = f"""
-Role: {role}
-Domain: {domain}
-Skills: {", ".join(skills)}
-
-Return ONLY valid JSON:
-{{
- "free": [{{"name":"","url":""}}],
- "paid": [{{"name":"","url":""}}]
-}}
-"""
-    response = safe_llm_call(
-        MAIN_MODEL,
-        [
-            {"role": "system", "content": "Return valid JSON only."},
-            {"role": "user", "content": prompt}
-        ]
-    )
-    return safe_json_load(response) or {"free": [], "paid": []}
-
 def generate_mcqs(skills, difficulty):
     prompt = f"""
 Create 10 advanced multiple choice questions.
-
 Skills: {", ".join(skills)}
 Difficulty: {difficulty}
 
-Rules:
-- Avoid basic general knowledge.
-- Questions must test applied understanding.
-- Include scenario-based and analytical thinking.
-- Options must be plausible and competitive.
-- Do NOT make easy textbook questions.
-
-Return ONLY valid JSON:
-[
- {{
-   "question": "...",
-   "options": ["A", "B", "C", "D"],
-   "answer": "Correct Option Text"
- }}
-]
+Avoid basic questions.
+Return ONLY valid JSON array.
 """
     response = safe_llm_call(
         MCQ_MODEL,
         [
-            {"role": "system", "content": "Return only valid JSON array."},
+            {"role": "system", "content": "Return ONLY valid JSON array."},
             {"role": "user", "content": prompt}
         ],
         temperature=0.4
@@ -253,22 +256,19 @@ def save_mock_result(data_row):
             scopes=scopes
         )
         client_gs = gspread.authorize(creds)
-
         try:
             sheet = client_gs.open("FutureProof_Mock_Results").sheet1
         except:
             sheet = client_gs.create("FutureProof_Mock_Results").sheet1
-
         sheet.append_row(data_row)
     except Exception as e:
         st.error(f"Mock Sheet Error: {str(e)}")
 
 # ================= SIDEBAR NAVIGATION =================
 
-st.sidebar.title("Navigation")
 page = st.sidebar.radio(
-    "Go To",
-    ["🔎 Skill Intelligence", "🎓 Mock Assessment", "🔐 Admin"]
+    "Navigation",
+    ["🔎 Skill Intelligence", "🎓 Mock Assessment"]
 )
 
 # ==========================================================
@@ -299,7 +299,7 @@ if page == "🔎 Skill Intelligence":
 
         with ThreadPoolExecutor() as executor:
             growth = executor.submit(generate_growth, role, domain).result()
-            certs = executor.submit(generate_certifications, role, domain).result()
+            certifications = executor.submit(generate_certifications, role, domain).result()
             market = executor.submit(generate_market, role, domain).result()
             confidence = executor.submit(generate_confidence, role, domain).result()
             platforms = executor.submit(generate_platforms, role, domain, skills).result()
@@ -315,20 +315,54 @@ if page == "🔎 Skill Intelligence":
 
         with tab1:
             st.header(role)
-            st.markdown(f"Detected Domain: `{domain}`")
+            st.markdown(f"🧭 Detected Domain: `{domain}`")
             st.code(confidence)
 
         with tab2:
-            for g in growth:
-                st.markdown(f"✔ {g}")
-            st.markdown(f"Estimated Timeline: ~{weeks} weeks")
+            for skill in growth:
+                st.markdown(f"✔️ {skill}")
+            st.markdown(f"⏳ Estimated Timeline: ~{weeks} weeks")
 
         with tab3:
-            for c in certs:
-                st.markdown(f"- {c}")
+            st.markdown("### 🎓 Recommended Certifications")
+            for cert in certifications:
+                st.markdown(f"- {cert}")
+
+            st.markdown("---")
+            st.markdown("### 🌐 Certification Platforms (Domain-Specific)")
+
+            st.markdown("#### 🆓 Free Learning Platforms")
+            for item in platforms.get("free", []):
+                st.markdown(f"- [{item['name']}]({item['url']})")
+
+            st.markdown("#### 💼 Paid / Market Recognized Certifications")
+            for item in platforms.get("paid", []):
+                st.markdown(f"- [{item['name']}]({item['url']})")
 
         with tab4:
             st.markdown(market)
+
+        st.divider()
+
+        rating = st.slider("How useful was this analysis?", 1, 5, 4)
+        feedback_text = st.text_area("What can we improve?")
+
+        if st.button("Submit Feedback"):
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            with open("feedback_log.txt", "a") as f:
+                f.write(f"{timestamp} | {name} | {rating} | {education} | {skills_input} | {feedback_text}\n")
+
+            save_feedback([
+                timestamp,
+                name,
+                rating,
+                education,
+                skills_input,
+                feedback_text
+            ])
+
+            st.success("✅ Feedback saved successfully!")
 
 # ==========================================================
 # ================= MOCK ASSESSMENT ========================
@@ -375,7 +409,7 @@ elif page == "🎓 Mock Assessment":
                 if user_answers[i] == q["answer"]:
                     score += 1
 
-            percent = (score / 10) * 100
+            percent = (score / len(st.session_state.mock_questions)) * 100
 
             st.markdown(f"### Score: {score}/10")
             st.markdown(f"### Percentage: {percent:.2f}%")
@@ -390,18 +424,3 @@ elif page == "🎓 Mock Assessment":
                 score,
                 percent
             ])
-
-# ==========================================================
-# ================= ADMIN ================================
-# ==========================================================
-
-elif page == "🔐 Admin":
-
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-
-    if st.button("Login"):
-        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
-            st.success("Admin logged in")
-        else:
-            st.error("Invalid credentials")

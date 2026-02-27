@@ -1,6 +1,6 @@
 # ==========================================================
-# FUTUREPROOF AI – Production Version (Multi-Section)
-# Core Logic Untouched | Mock Separated | Client Ready
+# FUTUREPROOF AI – Production Optimized (Client Version)
+# Full Logic Preserved | Mock Separated | Production Safe
 # ==========================================================
 
 import streamlit as st
@@ -49,7 +49,7 @@ def log_api_usage(event_type, status):
         f.write(f"{timestamp} | {event_type} | {status}\n")
 
 def safe_llm_call(model, messages, temperature=0.3, retries=2):
-    for _ in range(retries):
+    for attempt in range(retries):
         try:
             response = client.chat.completions.create(
                 model=model,
@@ -58,7 +58,7 @@ def safe_llm_call(model, messages, temperature=0.3, retries=2):
             )
             log_api_usage(model, "SUCCESS")
             return response.choices[0].message.content.strip()
-        except:
+        except Exception:
             time.sleep(2)
     log_api_usage(model, "FAILED")
     return None
@@ -73,6 +73,136 @@ def safe_json_load(text):
 def normalize_skills(skills_input):
     skills = [s.strip().lower() for s in skills_input.split(",") if s.strip()]
     return list(set(skills))
+
+# ================= CACHED FUNCTIONS =================
+
+@st.cache_data(ttl=3600)
+def detect_domain_cached(skills_tuple):
+    prompt = f"""
+Based strictly on these skills:
+{", ".join(skills_tuple)}
+Return only the professional domain name.
+"""
+    return safe_llm_call(
+        MAIN_MODEL,
+        [
+            {"role": "system", "content": "Return only domain name."},
+            {"role": "user", "content": prompt}
+        ]
+    ) or "General Domain"
+
+@st.cache_data(ttl=3600)
+def infer_role_cached(skills_tuple, domain):
+    prompt = f"""
+Skills: {", ".join(skills_tuple)}
+Domain: {domain}
+Return only one realistic professional role.
+"""
+    return safe_llm_call(
+        MAIN_MODEL,
+        [
+            {"role": "system", "content": "Return only role name."},
+            {"role": "user", "content": prompt}
+        ]
+    ) or "Specialist"
+
+# ================= CORE FUNCTIONS =================
+
+def generate_growth(role, domain):
+    prompt = f"""
+Role: {role}
+Domain: {domain}
+Suggest 6 competitive skills. Return comma-separated.
+"""
+    response = safe_llm_call(MAIN_MODEL, [{"role": "user", "content": prompt}])
+    if not response:
+        return []
+    return [s.strip().title() for s in re.split(r",|\n", response) if s.strip()][:6]
+
+def generate_certifications(role, domain):
+    prompt = f"""
+Role: {role}
+Domain: {domain}
+Suggest 6 globally recognized certifications. Return comma-separated.
+"""
+    response = safe_llm_call(MAIN_MODEL, [{"role": "user", "content": prompt}])
+    if not response:
+        return []
+    return [c.strip() for c in response.split(",")][:6]
+
+def generate_market(role, domain):
+    prompt = f"""
+Role: {role}
+Domain: {domain}
+Explain demand, hiring scale, 3-5 year outlook, job availability.
+"""
+    return safe_llm_call(MAIN_MODEL, [{"role": "user", "content": prompt}]) or "Market unavailable."
+
+def generate_confidence(role, domain):
+    prompt = f"""
+Role: {role}
+Domain: {domain}
+Provide:
+Confidence: X%
+Risk: Low/Medium/High
+Summary:
+"""
+    return safe_llm_call(MAIN_MODEL, [{"role": "user", "content": prompt}]) or \
+           "Confidence: 70%\nRisk: Medium\nSummary: Moderate outlook."
+
+def generate_platforms(role, domain, skills):
+    prompt = f"""
+Role: {role}
+Domain: {domain}
+Skills: {", ".join(skills)}
+
+Return ONLY valid JSON:
+{{
+ "free": [{{"name":"","url":""}}],
+ "paid": [{{"name":"","url":""}}]
+}}
+"""
+    response = safe_llm_call(
+        MAIN_MODEL,
+        [
+            {"role": "system", "content": "Return valid JSON only."},
+            {"role": "user", "content": prompt}
+        ]
+    )
+    return safe_json_load(response) or {"free": [], "paid": []}
+
+def generate_mcqs(skills, difficulty):
+    prompt = f"""
+Create 10 advanced multiple choice questions.
+
+Skills: {", ".join(skills)}
+Difficulty: {difficulty}
+
+Rules:
+- Avoid basic general knowledge.
+- Questions must test applied understanding.
+- Include scenario-based and analytical thinking.
+- Options must be plausible and competitive.
+- Do NOT make easy textbook questions.
+
+Return ONLY valid JSON:
+[
+ {{
+   "question": "...",
+   "options": ["A", "B", "C", "D"],
+   "answer": "Correct Option Text"
+ }}
+]
+"""
+    response = safe_llm_call(
+        MCQ_MODEL,
+        [
+            {"role": "system", "content": "Return only valid JSON array."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.4
+    )
+    return safe_json_load(response)
 
 # ================= GOOGLE SHEETS =================
 
@@ -133,30 +263,6 @@ if page == "🔎 Skill Intelligence":
 
     skills_input = st.text_input("Current Skills (comma-separated)")
     hours = st.slider("Weekly Learning Hours", 1, 40, 10)
-
-    @st.cache_data(ttl=3600)
-    def detect_domain_cached(skills_tuple):
-        prompt = f"""
-Based strictly on these skills:
-{", ".join(skills_tuple)}
-Return only the professional domain name.
-"""
-        return safe_llm_call(MAIN_MODEL, [
-            {"role": "system", "content": "Return only domain name."},
-            {"role": "user", "content": prompt}
-        ]) or "General Domain"
-
-    @st.cache_data(ttl=3600)
-    def infer_role_cached(skills_tuple, domain):
-        prompt = f"""
-Skills: {", ".join(skills_tuple)}
-Domain: {domain}
-Return only one realistic professional role.
-"""
-        return safe_llm_call(MAIN_MODEL, [
-            {"role": "system", "content": "Return only role name."},
-            {"role": "user", "content": prompt}
-        ]) or "Specialist"
 
     if st.button("🔎 Analyze Skill Intelligence", use_container_width=True):
 
@@ -259,20 +365,3 @@ elif page == "🎓 Mock Assessment":
                 score,
                 percent
             ])
-
-# ==========================================================
-# ================= ADMIN ================================
-# ==========================================================
-
-elif page == "🔐 Admin":
-
-    st.title("🔐 Admin Panel")
-
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-
-    if st.button("Login"):
-        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
-            st.success("Admin logged in")
-        else:
-            st.error("Invalid credentials")

@@ -113,67 +113,64 @@ def normalize_skills(skills_input):
     skills = [s.strip().lower() for s in skills_input.split(",") if s.strip()]
     return list(set(skills))
 
-# ================= CACHED FUNCTIONS =================
-
-@st.cache_data(ttl=3600)
-def detect_domain_cached(skills_tuple):
+# ================= DOMAIN =================
+def detect_domain(skills):
     prompt = f"""
-You are a career classification engine.
+Based strictly on these skills:
+{", ".join(skills)}
 
-Given these professional skills:
-{", ".join(skills_tuple)}
-
-Identify the professional career field (e.g., Data Analytics, Software Engineering, Cybersecurity, Finance, Marketing).
-
-Return ONLY the domain name.
+Identify the TRUE professional domain.
+Return only domain name.
 """
-    return safe_llm_call(MAIN_MODEL, [
-        {"role": "system", "content": "Classify career domain only."},
-        {"role": "user", "content": prompt}
-    ]) or "General Domain"
+    return gemini_generate(prompt) or "General Domain"
 
-@st.cache_data(ttl=3600)
-def infer_role_cached(skills_tuple, domain):
+# ================= ROLE =================
+def infer_career_role(skills):
+    domain = detect_domain(skills)
     prompt = f"""
-Skills: {", ".join(skills_tuple)}
+Skills: {", ".join(skills)}
 Domain: {domain}
 
-Suggest one realistic professional role aligned with this domain.
+Suggest one realistic professional role strictly aligned.
 Return only role name.
 """
-    return safe_llm_call(MAIN_MODEL, [
-        {"role": "system", "content": "Return only role name."},
-        {"role": "user", "content": prompt}
-    ]) or "Specialist"
+    return gemini_generate(prompt) or "Specialist"
 
-# ================= CORE FUNCTIONS =================
-
-def generate_growth(role, domain):
+# ================= GROWTH =================
+def infer_growth_plan(role, skills):
+    domain = detect_domain(skills)
     prompt = f"""
 Role: {role}
 Domain: {domain}
+
 Suggest 6 skills that increase competitiveness.
 Return comma-separated only.
 """
-    response = safe_llm_call(MAIN_MODEL, [{"role": "user", "content": prompt}])
+    response = gemini_generate(prompt)
     if not response:
         return []
     raw = re.split(r",|\n", response)
     return [s.strip().title() for s in raw if s.strip()][:6]
 
-def generate_certifications(role, domain):
+# ================= CERTIFICATIONS =================
+def infer_certifications(role, skills):
+    domain = detect_domain(skills)
     prompt = f"""
 Role: {role}
 Domain: {domain}
+
 Suggest 6 globally recognized certifications.
 Return comma-separated names only.
 """
-    response = safe_llm_call(MAIN_MODEL, [{"role": "user", "content": prompt}])
+    response = gemini_generate(prompt)
     if not response:
         return []
     return [c.strip() for c in response.split(",")][:6]
 
-def generate_platforms(role, domain, skills):
+# ================= DYNAMIC CERTIFICATION PLATFORMS (ADDED) =================
+def generate_certification_platforms(role, skills):
+    domain = detect_domain(skills)
+
     prompt = f"""
 Role: {role}
 Domain: {domain}
@@ -182,6 +179,7 @@ Skills: {", ".join(skills)}
 Provide certification platforms relevant to this domain.
 
 Return ONLY valid JSON:
+
 {{
  "free": [
    {{"name":"Platform Name","url":"https://example.com"}}
@@ -190,73 +188,62 @@ Return ONLY valid JSON:
    {{"name":"Platform Name","url":"https://example.com"}}
  ]
 }}
-"""
-    response = safe_llm_call(
-        MAIN_MODEL,
-        [
-            {"role": "system", "content": "Return strictly valid JSON only."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.2
-    )
-    return safe_json_load(response) or {"free": [], "paid": []}
 
-def generate_market(role, domain):
+No explanation.
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": "Return strictly valid JSON only."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2
+        )
+
+        raw_output = response.choices[0].message.content.strip()
+        raw_output = raw_output.replace("```json", "").replace("```", "").strip()
+        data = json.loads(raw_output)
+
+        log_api_usage("Groq Certification Platforms", "SUCCESS")
+        return data
+
+    except Exception as e:
+        log_api_usage("Groq Certification Platforms", f"FAILED: {str(e)}")
+        return {"free": [], "paid": []}
+
+# ================= MARKET =================
+def generate_market_summary(role, skills):
+    domain = detect_domain(skills)
     prompt = f"""
 Role: {role}
 Domain: {domain}
-Explain demand level, hiring scale, 3-5 year outlook, job availability.
+
+Explain:
+- Demand level
+- Hiring scale
+- 3-5 year outlook
+- Job availability
+Keep it market-focused.
 """
-    return safe_llm_call(MAIN_MODEL, [{"role": "user", "content": prompt}]) or "Market data unavailable."
+    return gemini_generate(prompt) or "Market data unavailable."
 
-def generate_confidence(role, domain):
+# ================= CONFIDENCE =================
+def generate_confidence_and_risk(role, skills):
+    domain = detect_domain(skills)
     prompt = f"""
-You are a career forecasting assistant.
-
 Role: {role}
 Domain: {domain}
 
-Provide STRICTLY in this exact format:
-
-Confidence: <percentage between 60-95%>
-Risk: <Low / Medium / High>
-Summary: <3 concise sentences about career stability, demand, and future outlook>
-
-Rules:
-- Do NOT create reports.
-- Do NOT include headings.
-- Do NOT include case studies.
-- Do NOT mention datasets.
-- Do NOT add bullet points.
-- Keep response under 120 words.
-- Only return the three required lines.
+Provide:
+Confidence: X%
+Risk: Low/Medium/High
+Summary: Short explanation
+Based on career demand.
 """
-    return safe_llm_call(
-        MAIN_MODEL,
-        [
-            {"role": "system", "content": "Return only structured career forecast."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.2
-    ) or "Confidence: 70%\nRisk: Medium\nSummary: Stable demand with moderate growth outlook."
-def generate_mcqs(skills, difficulty):
-    prompt = f"""
-Create 10 advanced multiple choice questions.
-Skills: {", ".join(skills)}
-Difficulty: {difficulty}
+    return gemini_generate(prompt) or "Confidence: 70%\nRisk: Medium\nSummary: Moderate outlook."
 
-Avoid basic questions.
-Return ONLY valid JSON array.
-"""
-    response = safe_llm_call(
-        MCQ_MODEL,
-        [
-            {"role": "system", "content": "Return ONLY valid JSON array."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.4
-    )
-    return safe_json_load(response)
 
 # ================= GOOGLE SHEET =================
 
@@ -491,4 +478,5 @@ elif page == "🔐 Admin Portal":
         else:
             st.error("❌ Invalid Admin Credentials")        
         
+
 

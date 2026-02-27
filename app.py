@@ -28,9 +28,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.markdown("""
-<style>
-
+# ================= UI STYLE =================
 st.markdown("""
 <style>
 
@@ -55,14 +53,12 @@ section[data-testid="stSidebar"] div[aria-checked="true"] {
     border-radius: 8px;
 }
 
-/* ================= RADIO OPTIONS (MAIN FIX) ================= */
-
-/* Force ALL radio option text white */
+/* ================= RADIO OPTIONS ================= */
 div[data-testid="stRadio"] * {
     color: #ffffff !important;
 }
 
-/* Make radio circles visible */
+/* Radio circle */
 div[data-testid="stRadio"] span {
     border-color: #ffffff !important;
 }
@@ -83,7 +79,7 @@ div[data-testid="stSelectbox"] div {
 }
 
 /* ================= BUTTON ================= */
-.stButton>button {
+.stButton > button {
     background: linear-gradient(90deg, #6366f1, #3b82f6);
     color: white !important;
     border-radius: 10px;
@@ -518,6 +514,7 @@ elif page == "🔐 Admin Portal":
         else:
             st.error("❌ Invalid Admin Credentials")        
         
+
 
 
 

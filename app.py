@@ -211,17 +211,34 @@ Explain demand level, hiring scale, 3-5 year outlook, job availability.
 
 def generate_confidence(role, domain):
     prompt = f"""
+You are a career forecasting assistant.
+
 Role: {role}
 Domain: {domain}
 
-Provide:
-Confidence: X%
-Risk: Low/Medium/High
-Summary:
-"""
-    return safe_llm_call(MAIN_MODEL, [{"role": "user", "content": prompt}]) or \
-           "Confidence: 70%\nRisk: Medium\nSummary: Moderate outlook."
+Provide STRICTLY in this exact format:
 
+Confidence: <percentage between 60-95%>
+Risk: <Low / Medium / High>
+Summary: <3 concise sentences about career stability, demand, and future outlook>
+
+Rules:
+- Do NOT create reports.
+- Do NOT include headings.
+- Do NOT include case studies.
+- Do NOT mention datasets.
+- Do NOT add bullet points.
+- Keep response under 120 words.
+- Only return the three required lines.
+"""
+    return safe_llm_call(
+        MAIN_MODEL,
+        [
+            {"role": "system", "content": "Return only structured career forecast."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.2
+    ) or "Confidence: 70%\nRisk: Medium\nSummary: Stable demand with moderate growth outlook."
 def generate_mcqs(skills, difficulty):
     prompt = f"""
 Create 10 advanced multiple choice questions.
@@ -474,3 +491,4 @@ elif page == "🔐 Admin Portal":
         else:
             st.error("❌ Invalid Admin Credentials")        
         
+

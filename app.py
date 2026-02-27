@@ -77,13 +77,27 @@ div[data-testid="stRadio"] span {
 }
 
 /* ================= INPUT FIELDS ================= */
-div[data-testid="stTextInput"] input,
-div[data-testid="stTextArea"] textarea,
-div[data-testid="stSelectbox"] div {
-    background-color: #1f2937 !important;
+/* Target Streamlit form labels specifically */
+div[data-testid="stForm"] label,
+div[data-testid="stTextInput"] label,
+div[data-testid="stSelectbox"] label,
+div[data-testid="stTextArea"] label,
+div[data-testid="stSlider"] label {
     color: #ffffff !important;
-    border-radius: 8px !important;
-    border: 1px solid #4b5563 !important;
+    font-weight: 600 !important;
+    opacity: 1 !important;
+}
+
+/* Fix small caption-style labels */
+label[data-testid="stWidgetLabel"] {
+    color: #ffffff !important;
+    font-weight: 600 !important;
+    opacity: 1 !important;
+}
+
+/* Remove faded effect */
+.css-1cpxqw2, .css-1offfwp {
+    opacity: 1 !important;
 }
 
 /* ================= BUTTON ================= */
@@ -521,6 +535,7 @@ elif page == "🔐 Admin Portal":
         else:
             st.error("❌ Invalid Admin Credentials")        
         
+
 
 
 

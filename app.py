@@ -303,6 +303,17 @@ Return ONLY valid JSON array.
     )
     return safe_json_load(response)
 
+
+# ================= TIMER CONFIG =================
+def get_time_limit(difficulty):
+    if difficulty == "Beginner":
+        return 2 * 60   # 2 minutes
+    elif difficulty == "Intermediate":
+        return 4 * 60   # 4 minutes
+    elif difficulty == "Expert":
+        return 6 * 60   # 6 minutes
+    return 2 * 60
+
 # ================= GOOGLE SHEET =================
 
 def save_feedback(data_row):
@@ -454,15 +465,35 @@ elif page == "🎓 Mock Assessment":
     if "mock_questions" not in st.session_state:
         st.session_state.mock_questions = []
 
+    # ================= GENERATE TEST =================
     if st.button("Generate Test"):
         skills = normalize_skills(skills_input)
         questions = generate_mcqs(skills, difficulty)
+
         if questions:
             st.session_state.mock_questions = questions
+            st.session_state.start_time = time.time()
+            st.session_state.time_limit = get_time_limit(difficulty)
         else:
             st.error("Failed to generate test questions.")
 
+    # ================= DISPLAY QUESTIONS =================
     if st.session_state.mock_questions:
+
+        # ================= TIMER DISPLAY =================
+        auto_submit = False
+
+        if "start_time" in st.session_state:
+            elapsed = int(time.time() - st.session_state.start_time)
+            remaining = st.session_state.time_limit - elapsed
+
+            if remaining <= 0:
+                st.warning("⏰ Time is up! Auto-submitting test...")
+                auto_submit = True
+            else:
+                minutes = remaining // 60
+                seconds = remaining % 60
+                st.markdown(f"### ⏳ Time Remaining: {minutes:02d}:{seconds:02d}")
 
         user_answers = []
         score = 0
@@ -477,7 +508,8 @@ elif page == "🎓 Mock Assessment":
             )
             user_answers.append(selected)
 
-        if st.button("Submit Test"):
+        # ================= SUBMIT TEST =================
+        if st.button("Submit Test") or auto_submit:
 
             for i, q in enumerate(st.session_state.mock_questions):
                 if user_answers[i] == q["answer"]:
@@ -535,6 +567,7 @@ elif page == "🔐 Admin Portal":
         else:
             st.error("❌ Invalid Admin Credentials")        
         
+
 
 
 

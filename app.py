@@ -141,6 +141,16 @@ page = st.sidebar.radio(
     "",
     ["🔎 Skill Intelligence", "🎓 Mock Assessment", "🔐 Admin Portal"]
 )
+# Reset mock session when switching pages
+if page != "🎓 Mock Assessment":
+    if "mock_questions" in st.session_state:
+        del st.session_state.mock_questions
+    if "start_time" in st.session_state:
+        del st.session_state.start_time
+    if "time_limit" in st.session_state:
+        del st.session_state.time_limit
+    if "exam_submitted" in st.session_state:
+        del st.session_state.exam_submitted
 
 # ================= UTILITIES =================
 
@@ -589,6 +599,7 @@ elif page == "🔐 Admin Portal":
         else:
             st.error("❌ Invalid Admin Credentials")        
         
+
 
 
 

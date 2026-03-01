@@ -477,66 +477,88 @@ elif page == "🎓 Mock Assessment":
         else:
             st.error("Failed to generate test questions.")
 
-    # ================= DISPLAY QUESTIONS =================
-    if st.session_state.mock_questions:
+   # ================= DISPLAY QUESTIONS =================
+if st.session_state.mock_questions:
 
-        # ================= TIMER DISPLAY =================
-        auto_submit = False
+    # ================= TIMER DISPLAY =================
+    auto_submit = False
 
-        if "start_time" in st.session_state:
-            elapsed = int(time.time() - st.session_state.start_time)
-            remaining = st.session_state.time_limit - elapsed
+    if "start_time" in st.session_state:
+        elapsed = int(time.time() - st.session_state.start_time)
+        remaining = st.session_state.time_limit - elapsed
 
-            if remaining <= 0:
-                st.warning("⏰ Time is up! Auto-submitting test...")
-                auto_submit = True
+        if remaining <= 0:
+            st.warning("⏰ Time is up! Auto-submitting test...")
+            auto_submit = True
+        else:
+            minutes = remaining // 60
+            seconds = remaining % 60
+            st.markdown(f"### ⏳ Time Remaining: {minutes:02d}:{seconds:02d}")
+
+    user_answers = []
+    score = 0
+
+    # ================= QUESTION LOOP =================
+    for i, q in enumerate(st.session_state.mock_questions):
+
+        st.markdown(f"### Q{i+1}. {q['question']}")
+
+        selected = st.radio(
+            "",
+            q["options"],
+            index=None,
+            key=f"mock_{i}"
+        )
+
+        user_answers.append(selected)
+
+        # AFTER SUBMISSION SHOW ANSWER FEEDBACK
+        if "exam_submitted" in st.session_state and st.session_state.exam_submitted:
+
+            correct_answer = q["answer"]
+
+            if selected == correct_answer:
+                st.success(f"✅ Correct Answer: {correct_answer}")
             else:
-                minutes = remaining // 60
-                seconds = remaining % 60
-                st.markdown(f"### ⏳ Time Remaining: {minutes:02d}:{seconds:02d}")
+                st.error(f"❌ Your Answer: {selected}")
+                st.info(f"✔ Correct Answer: {correct_answer}")
 
-        user_answers = []
-        score = 0
+    # ================= SUBMIT TEST =================
+    if st.button("Submit Test") or auto_submit:
+
+        st.session_state.exam_submitted = True
 
         for i, q in enumerate(st.session_state.mock_questions):
-            st.markdown(f"### Q{i+1}. {q['question']}")
-            selected = st.radio(
-                "",
-                q["options"],
-                index=None,
-                key=f"mock_{i}"
-            )
-            user_answers.append(selected)
+            if user_answers[i] == q["answer"]:
+                score += 1
 
-        # ================= SUBMIT TEST =================
-        if st.button("Submit Test") or auto_submit:
+        percent = (score / len(st.session_state.mock_questions)) * 100
 
-            for i, q in enumerate(st.session_state.mock_questions):
-                if user_answers[i] == q["answer"]:
-                    score += 1
+        st.markdown("## 📊 Test Result")
+        st.markdown(f"### Score: {score}/10")
+        st.markdown(f"### Percentage: {percent:.2f}%")
 
-            percent = (score / len(st.session_state.mock_questions)) * 100
+        if percent >= 80:
+            st.success("✅ Qualified (80%+)")
+        else:
+            st.error("❌ Not Qualified (Below 80%)")
 
-            st.markdown("## 📊 Test Result")
-            st.markdown(f"### Score: {score}/10")
-            st.markdown(f"### Percentage: {percent:.2f}%")
+        save_mock_result([
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            candidate_name,
+            candidate_email,
+            candidate_education,
+            skills_input,
+            difficulty,
+            score,
+            percent
+        ])
 
-            if percent >= 80:
-                st.success("✅ Qualified (80%+)")
-            else:
-                st.error("❌ Not Qualified (Below 80%)")
-
-            save_mock_result([
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                candidate_name,
-                candidate_email,
-                candidate_education,
-                skills_input,
-                difficulty,
-                score,
-                percent
-            ])
-
+        # STOP TIMER
+        if "start_time" in st.session_state:
+            del st.session_state.start_time
+        if "time_limit" in st.session_state:
+            del st.session_state.time_limit
 # ==========================================================
 # ================= ADMIN PORTAL ===========================
 # ==========================================================
@@ -567,6 +589,7 @@ elif page == "🔐 Admin Portal":
         else:
             st.error("❌ Invalid Admin Credentials")        
         
+
 
 
 

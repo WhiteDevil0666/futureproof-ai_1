@@ -488,7 +488,8 @@ elif page == "🎓 Mock Assessment":
             st.error("Failed to generate test questions.")
 
    # ================= DISPLAY QUESTIONS =================
-if st.session_state.mock_questions:
+# ================= DISPLAY QUESTIONS =================
+if "mock_questions" in st.session_state and st.session_state.mock_questions:
 
     # ================= TIMER DISPLAY =================
     auto_submit = False
@@ -599,6 +600,7 @@ elif page == "🔐 Admin Portal":
         else:
             st.error("❌ Invalid Admin Credentials")        
         
+
 
 
 

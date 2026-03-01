@@ -282,15 +282,30 @@ Explain demand level, hiring scale, 3-5 year outlook, job availability.
     return safe_llm_call(MAIN_MODEL, [{"role": "user", "content": prompt}]) or "Market data unavailable."
 
 def generate_confidence(role, domain):
+
     prompt = f"""
 Role: {role}
 Domain: {domain}
 
-Provide:
-Confidence: X%
+You are a career evaluation engine.
+
+Provide ONLY:
+
+Confidence: X% (numeric realistic hiring confidence)
 Risk: Low/Medium/High
-Summary:
+Summary: 2-3 lines about job market demand and career stability.
+
+DO NOT:
+- Propose projects
+- Suggest implementation plans
+- Provide technical design
+- Provide budget
+- Provide roadmap
+- Provide company strategy
+
+Keep response short and strictly career-focused.
 """
+
     return safe_llm_call(MAIN_MODEL, [{"role": "user", "content": prompt}]) or \
            "Confidence: 70%\nRisk: Medium\nSummary: Moderate outlook."
 
@@ -600,6 +615,7 @@ elif page == "🔐 Admin Portal":
         else:
             st.error("❌ Invalid Admin Credentials")        
         
+
 
 
 

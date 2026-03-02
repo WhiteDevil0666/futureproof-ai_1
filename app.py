@@ -524,27 +524,26 @@ elif page == "🎓 Mock Assessment":
         else:
             st.error("Failed to generate test questions.")
 
-   # ================= DISPLAY QUESTIONS =================
-# ================= DISPLAY QUESTIONS =================
-if "mock_questions" in st.session_state and st.session_state.mock_questions:
+       # ================= DISPLAY QUESTIONS =================
+    if "mock_questions" in st.session_state and st.session_state.mock_questions:
 
-    # ================= TIMER DISPLAY =================
-    auto_submit = False
+        # ================= TIMER DISPLAY =================
+        auto_submit = False
 
-    if "start_time" in st.session_state:
-        elapsed = int(time.time() - st.session_state.start_time)
-        remaining = st.session_state.time_limit - elapsed
+        if "start_time" in st.session_state:
+            elapsed = int(time.time() - st.session_state.start_time)
+            remaining = st.session_state.time_limit - elapsed
 
-        if remaining <= 0:
-            st.warning("⏰ Time is up! Auto-submitting test...")
-            auto_submit = True
-        else:
-            minutes = remaining // 60
-            seconds = remaining % 60
-            st.markdown(f"### ⏳ Time Remaining: {minutes:02d}:{seconds:02d}")
-
-    user_answers = []
-    score = 0
+            if remaining <= 0:
+                st.warning("⏰ Time is up! Auto-submitting test...")
+                auto_submit = True
+            else:
+                minutes = remaining // 60
+                seconds = remaining % 60
+                st.markdown(f"### ⏳ Time Remaining: {minutes:02d}:{seconds:02d}")
+                
+        user_answers = []
+        score = 0
 
     # ================= SUBMIT TEST =================
     if st.button("Submit Test") or auto_submit:
@@ -631,5 +630,6 @@ elif page == "🔐 Admin Portal":
         else:
             st.error("❌ Invalid Admin Credentials")        
         
+
 
 

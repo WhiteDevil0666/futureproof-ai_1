@@ -141,13 +141,15 @@ button[data-baseweb="tab"] span {
 
 div[data-testid="stMetric"] {
     background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
     padding: 20px;
     border-radius: 12px;
 }
 
 div[data-testid="stMetricLabel"] {
-    color: #cbd5e1 !important;
-    font-weight: 600 !important;
+    color: #ffffff !important;
+    font-weight: 700 !important;
+    font-size: 16px !important;
     opacity: 1 !important;
 }
 
@@ -987,6 +989,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

@@ -198,6 +198,44 @@ div[data-testid="stChatMessage"][data-testid*="user"] {
 div[data-testid="stChatMessage"][data-testid*="assistant"] {
     background: rgba(255,255,255,0.08) !important;
 }
+/* ================= CODE BLOCK VISIBILITY FIX ================= */
+
+/* Inline code (like SELECT) */
+code {
+    background-color: rgba(255,255,255,0.15) !important;
+    color: #ffffff !important;
+    padding: 4px 8px !important;
+    border-radius: 6px !important;
+    font-weight: 600 !important;
+}
+
+/* Code block container */
+pre {
+    background-color: #1e293b !important;
+    color: #ffffff !important;
+    padding: 16px !important;
+    border-radius: 12px !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+    overflow-x: auto !important;
+}
+
+/* Code inside pre */
+pre code {
+    background: none !important;
+    color: #ffffff !important;
+    font-weight: 500 !important;
+}
+
+/* Streamlit specific markdown code block */
+div[data-testid="stMarkdownContainer"] pre {
+    background-color: #1e293b !important;
+    color: #ffffff !important;
+}
+
+/* Force syntax highlight text white */
+div[data-testid="stMarkdownContainer"] code {
+    color: #ffffff !important;
+}
 </style>
 """, unsafe_allow_html=True)
 st.markdown('<div class="main-title">🚀 FutureProof Skill Intelligence Engine</div>', unsafe_allow_html=True)
@@ -1166,6 +1204,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

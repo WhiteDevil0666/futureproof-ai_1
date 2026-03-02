@@ -115,6 +115,59 @@ h1, h2, h3, h4 {
     color: #ffffff !important;
 }
 
+/* ================= TAB VISIBILITY FIX ================= */
+
+button[data-baseweb="tab"] {
+    color: #ffffff !important;
+    font-weight: 600 !important;
+    opacity: 1 !important;
+}
+
+button[data-baseweb="tab"]:hover {
+    color: #60a5fa !important;
+}
+
+button[aria-selected="true"] {
+    color: #ffffff !important;
+    border-bottom: 3px solid #3b82f6 !important;
+}
+
+/* Remove faded inactive look */
+button[data-baseweb="tab"] span {
+    opacity: 1 !important;
+}
+
+/* ================= METRIC VISIBILITY FIX ================= */
+
+div[data-testid="stMetric"] {
+    background: rgba(255,255,255,0.05);
+    padding: 20px;
+    border-radius: 12px;
+}
+
+div[data-testid="stMetricLabel"] {
+    color: #cbd5e1 !important;
+    font-weight: 600 !important;
+    opacity: 1 !important;
+}
+
+div[data-testid="stMetricValue"] {
+    color: #ffffff !important;
+    font-weight: 800 !important;
+    font-size: 28px !important;
+    opacity: 1 !important;
+}
+/* Extra safety for Streamlit tab text */
+div[data-testid="stTabs"] button {
+    color: #ffffff !important;
+    opacity: 1 !important;
+    font-weight: 600 !important;
+}
+
+div[data-testid="stTabs"] button[aria-selected="true"] {
+    border-bottom: 3px solid #3b82f6 !important;
+    color: #ffffff !important;
+}
 </style>
 """, unsafe_allow_html=True)
 st.markdown('<div class="main-title">🚀 FutureProof Skill Intelligence Engine</div>', unsafe_allow_html=True)
@@ -934,6 +987,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

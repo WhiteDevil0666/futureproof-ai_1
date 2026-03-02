@@ -511,7 +511,7 @@ if page == "🔎 Skill Intelligence":
             growth = executor.submit(generate_growth, role, domain).result() or []
             certifications = executor.submit(generate_certifications, role, domain).result() or []
             market = executor.submit(generate_market, role, domain).result() or "Market data unavailable."
-            confidence = executor.submit(generate_confidence, role, domain).result() or {}
+            confidence = executor.submit(generate_confidence, role, domain).result()
             platforms = executor.submit(generate_platforms, role, domain, skills).result() or {"free": [], "paid": []}
 
         weeks = round((len(growth) * 40) / hours) if hours else 0
@@ -523,15 +523,40 @@ if page == "🔎 Skill Intelligence":
             "🌍 Market Outlook"
         ])
 
-        # ================= ROLE ALIGNMENT =================
+        # ======================================================
+        # ================= ROLE ALIGNMENT =====================
+        # ======================================================
         with tab1:
+
             st.header(role)
             st.markdown(f"🧭 Detected Domain: `{domain}`")
 
-            # Safe structured display
-            confidence_value = confidence.get("confidence", 70)
-            risk_value = confidence.get("risk", "Medium")
-            summary_value = confidence.get("summary", "Moderate job outlook.")
+            # ================= SAFE CONFIDENCE HANDLING =================
+            confidence_value = 70
+            risk_value = "Medium"
+            summary_value = "Moderate job outlook."
+
+            if isinstance(confidence, dict):
+                confidence_value = confidence.get("confidence", 70)
+                risk_value = confidence.get("risk", "Medium")
+                summary_value = confidence.get("summary", "Moderate job outlook.")
+
+            elif isinstance(confidence, str):
+
+                import re
+
+                conf_match = re.search(r"(\d+)%", confidence)
+                risk_match = re.search(r"Risk:\s*(Low|Medium|High)", confidence)
+                summary_match = re.search(r"Summary:\s*(.*)", confidence)
+
+                if conf_match:
+                    confidence_value = int(conf_match.group(1))
+
+                if risk_match:
+                    risk_value = risk_match.group(1)
+
+                if summary_match:
+                    summary_value = summary_match.group(1)
 
             colA, colB = st.columns(2)
             with colA:
@@ -542,8 +567,11 @@ if page == "🔎 Skill Intelligence":
             st.markdown("### 📌 Career Outlook")
             st.markdown(summary_value)
 
-        # ================= COMPETITIVENESS PLAN =================
+        # ======================================================
+        # ================= COMPETITIVENESS PLAN ===============
+        # ======================================================
         with tab2:
+
             if growth:
                 for skill in growth:
                     st.markdown(f"✔️ {skill}")
@@ -551,8 +579,11 @@ if page == "🔎 Skill Intelligence":
             else:
                 st.info("No skill recommendations available.")
 
-        # ================= CERTIFICATIONS =================
+        # ======================================================
+        # ================= CERTIFICATIONS =====================
+        # ======================================================
         with tab3:
+
             st.markdown("### 🎓 Recommended Certifications")
 
             if certifications:
@@ -572,7 +603,9 @@ if page == "🔎 Skill Intelligence":
             for item in platforms.get("paid", []):
                 st.markdown(f"- [{item['name']}]({item['url']})")
 
-        # ================= MARKET OUTLOOK =================
+        # ======================================================
+        # ================= MARKET OUTLOOK =====================
+        # ======================================================
         with tab4:
             st.markdown(market)
 
@@ -901,6 +934,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

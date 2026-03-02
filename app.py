@@ -292,19 +292,8 @@ Return comma-separated only.
     raw = re.split(r",|\n", response)
     return [s.strip().title() for s in raw if s.strip()][:6]
 
-def generate_certifications(role, domain):
-    prompt = f"""
-Role: {role}
-Domain: {domain}
-Suggest 6 globally recognized certifications.
-Return comma-separated names only.
-"""
-    response = safe_llm_call(MAIN_MODEL, [{"role": "user", "content": prompt}])
-    if not response:
-        return []
-    return [c.strip() for c in response.split(",")][:6]
-
 def generate_platforms(role, domain, skills):
+
     prompt = f"""
 Role: {role}
 Domain: {domain}
@@ -312,26 +301,55 @@ Skills: {", ".join(skills)}
 
 Provide certification platforms relevant to this domain.
 
-Return ONLY valid JSON:
+STRICT RULES:
+- Return ONLY pure JSON
+- No explanation
+- No markdown
+- No extra text
+- No triple backticks
+
+Format exactly like this:
+
 {{
- "free": [
-   {{"name":"Platform Name","url":"https://example.com"}}
- ],
- "paid": [
-   {{"name":"Platform Name","url":"https://example.com"}}
- ]
+  "free": [
+    {{"name": "Platform Name", "url": "https://example.com"}}
+  ],
+  "paid": [
+    {{"name": "Platform Name", "url": "https://example.com"}}
+  ]
 }}
 """
+
     response = safe_llm_call(
         MAIN_MODEL,
         [
-            {"role": "system", "content": "Return strictly valid JSON only."},
+            {"role": "system", "content": "Return ONLY raw JSON. No text."},
             {"role": "user", "content": prompt}
         ],
-        temperature=0.2
+        temperature=0
     )
-    return safe_json_load(response) or {"free": [], "paid": []}
 
+    if not response:
+        return {"free": [], "paid": []}
+
+    # --------- IMPROVED JSON CLEANING ---------
+    try:
+        cleaned = response.strip()
+
+        # Remove markdown if model adds it
+        cleaned = cleaned.replace("```json", "").replace("```", "").strip()
+
+        # Extract JSON block if extra text exists
+        start = cleaned.find("{")
+        end = cleaned.rfind("}") + 1
+        if start != -1 and end != -1:
+            cleaned = cleaned[start:end]
+
+        return json.loads(cleaned)
+
+    except Exception as e:
+        print("Platform JSON parse error:", response)
+        return {"free": [], "paid": []}
 def generate_market(role, domain):
     prompt = f"""
 Role: {role}
@@ -993,6 +1011,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

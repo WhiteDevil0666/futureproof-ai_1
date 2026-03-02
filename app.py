@@ -521,15 +521,17 @@ elif page == "🎓 Mock Assessment":
             st.session_state.mock_questions = questions
             st.session_state.start_time = time.time()
             st.session_state.time_limit = get_time_limit(difficulty)
+            st.session_state.exam_submitted = False
+            st.session_state.explanations = {}
         else:
             st.error("Failed to generate test questions.")
 
-       # ================= DISPLAY QUESTIONS =================
-    if "mock_questions" in st.session_state and st.session_state.mock_questions:
+    # ================= DISPLAY QUESTIONS =================
+    if st.session_state.get("mock_questions"):
 
-        # ================= TIMER DISPLAY =================
         auto_submit = False
 
+        # ================= TIMER =================
         if "start_time" in st.session_state:
             elapsed = int(time.time() - st.session_state.start_time)
             remaining = st.session_state.time_limit - elapsed
@@ -541,65 +543,83 @@ elif page == "🎓 Mock Assessment":
                 minutes = remaining // 60
                 seconds = remaining % 60
                 st.markdown(f"### ⏳ Time Remaining: {minutes:02d}:{seconds:02d}")
-                
-        user_answers = []
-        score = 0
 
-    # ================= SUBMIT TEST =================
-    if st.button("Submit Test") or auto_submit:
-
-        st.session_state.exam_submitted = True
-
-        score = 0
-
-        # Calculate score safely from session_state
+        # ================= QUESTION LOOP =================
         for i, q in enumerate(st.session_state.mock_questions):
 
-            selected = st.session_state.get(f"mock_{i}")
+            st.markdown(f"### Q{i+1}. {q['question']}")
 
-            if selected == q["answer"]:
-                score += 1
+            selected = st.radio(
+                "",
+                q["options"],
+                index=None,
+                key=f"mock_{i}",
+                disabled=st.session_state.get("exam_submitted", False)
+            )
 
-        percent = (score / len(st.session_state.mock_questions)) * 100
+            # AFTER SUBMISSION SHOW ANSWER + EXPLANATION
+            if st.session_state.get("exam_submitted"):
 
-        # Generate explanations once
-        if "explanations" not in st.session_state:
-            st.session_state.explanations = {}
+                correct_answer = q["answer"]
 
-        for i, q in enumerate(st.session_state.mock_questions):
-            if i not in st.session_state.explanations:
-                explanation = generate_explanation(
-                    q["question"],
-                    q["answer"]
-                )
-                st.session_state.explanations[i] = explanation
+                if selected == correct_answer:
+                    st.success(f"✅ Correct Answer: {correct_answer}")
+                else:
+                    st.error(f"❌ Your Answer: {selected}")
+                    st.info(f"✔ Correct Answer: {correct_answer}")
 
-        # ================= RESULT DISPLAY =================
-        st.markdown("## 📊 Test Result")
-        st.markdown(f"### Score: {score}/10")
-        st.markdown(f"### Percentage: {percent:.2f}%")
+                st.markdown("📘 **Explanation:**")
+                st.info(st.session_state.explanations.get(i, "No explanation available."))
 
-        if percent >= 80:
-            st.success("✅ Qualified (80%+)")
-        else:
-            st.error("❌ Not Qualified (Below 80%)")
+        # ================= SUBMIT TEST =================
+        if st.button("Submit Test") or auto_submit:
 
-        save_mock_result([
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            candidate_name,
-            candidate_email,
-            candidate_education,
-            skills_input,
-            difficulty,
-            score,
-            percent
-        ])
+            st.session_state.exam_submitted = True
 
-        # STOP TIMER
-        if "start_time" in st.session_state:
-            del st.session_state.start_time
-        if "time_limit" in st.session_state:
-            del st.session_state.time_limit
+            score = 0
+
+            for i, q in enumerate(st.session_state.mock_questions):
+
+                selected = st.session_state.get(f"mock_{i}")
+
+                if selected == q["answer"]:
+                    score += 1
+
+                # Generate explanation
+                if i not in st.session_state.explanations:
+                    explanation = generate_explanation(
+                        q["question"],
+                        q["answer"]
+                    )
+                    st.session_state.explanations[i] = explanation
+
+            percent = (score / len(st.session_state.mock_questions)) * 100
+
+            st.markdown("## 📊 Test Result")
+            st.markdown(f"### Score: {score}/10")
+            st.markdown(f"### Percentage: {percent:.2f}%")
+
+            if percent >= 80:
+                st.success("✅ Qualified (80%+)")
+            else:
+                st.error("❌ Not Qualified (Below 80%)")
+
+            save_mock_result([
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                candidate_name,
+                candidate_email,
+                candidate_education,
+                skills_input,
+                difficulty,
+                score,
+                percent
+            ])
+
+            # STOP TIMER
+            if "start_time" in st.session_state:
+                del st.session_state.start_time
+            if "time_limit" in st.session_state:
+                del st.session_state.time_limit
 # ==========================================================
 # ================= ADMIN PORTAL ===========================
 # ==========================================================
@@ -630,6 +650,7 @@ elif page == "🔐 Admin Portal":
         else:
             st.error("❌ Invalid Admin Credentials")        
         
+
 
 
 

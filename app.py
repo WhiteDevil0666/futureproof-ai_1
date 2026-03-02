@@ -198,7 +198,12 @@ st.sidebar.markdown("## 📌 Navigation")
 
 page = st.sidebar.radio(
     "",
-    ["🔎 Skill Intelligence", "🎓 Mock Assessment", "🔐 Admin Portal"]
+    [
+        "🔎 Skill Intelligence",
+        "🎓 Mock Assessment",
+        "📚 Guided Study Chat",   # 👈 ADD THIS
+        "🔐 Admin Portal"
+    ]
 )
 # Reset mock session when switching pages
 if page != "🎓 Mock Assessment":
@@ -210,6 +215,13 @@ if page != "🎓 Mock Assessment":
         del st.session_state.time_limit
     if "exam_submitted" in st.session_state:
         del st.session_state.exam_submitted
+if page != "📚 Guided Study Chat":
+    if "study_chat_started" in st.session_state:
+        del st.session_state.study_chat_started
+    if "study_messages" in st.session_state:
+        del st.session_state.study_messages
+    if "study_context" in st.session_state:
+        del st.session_state.study_context
 
 # ================= UTILITIES =================
 
@@ -923,6 +935,98 @@ elif page == "🎓 Mock Assessment":
                 ])
 
                 st.session_state.result_saved = True
+
+
+
+# ==========================================================
+# ================= GUIDED STUDY CHAT ======================
+# ==========================================================
+
+elif page == "📚 Guided Study Chat":
+
+    st.header("📚 AI Guided Study Chat")
+
+    # ================= USER DETAILS =================
+    candidate_name = st.text_input("Full Name")
+    education = st.selectbox(
+        "Education Level",
+        ["High School", "Diploma", "Graduation", "Post Graduation", "Other"]
+    )
+
+    topic = st.text_input("Topic You Want To Study")
+
+    level = st.selectbox(
+        "Skill Level",
+        ["Beginner", "Intermediate", "Expert"]
+    )
+
+    learning_goal = st.text_input("Learning Goal (Optional)")
+
+    if "study_chat_started" not in st.session_state:
+        st.session_state.study_chat_started = False
+
+    if "study_messages" not in st.session_state:
+        st.session_state.study_messages = []
+
+    if st.button("Start Learning"):
+
+        if topic and candidate_name:
+
+            st.session_state.study_chat_started = True
+
+            st.session_state.study_context = f"""
+You are an expert tutor.
+
+Teach Topic: {topic}
+Difficulty Level: {level}
+Student Education: {education}
+Student Goal: {learning_goal}
+
+RULES:
+- Stay strictly within the selected topic.
+- Adjust explanation depth based on difficulty.
+- Provide structured explanations.
+- Use examples when helpful.
+- If question is outside topic, politely redirect.
+"""
+
+            st.session_state.study_messages = []
+
+        else:
+            st.warning("Please fill required details.")
+
+    # ================= CHAT AREA =================
+    if st.session_state.study_chat_started:
+
+        st.markdown("---")
+        st.subheader(f"📘 Learning Topic: {topic}")
+
+        user_input = st.chat_input("Ask your question about this topic...")
+
+        if user_input:
+
+            st.session_state.study_messages.append(
+                {"role": "user", "content": user_input}
+            )
+
+            messages = [
+                {"role": "system", "content": st.session_state.study_context}
+            ] + st.session_state.study_messages
+
+            response = safe_llm_call(
+                MAIN_MODEL,
+                messages,
+                temperature=0.4
+            )
+
+            st.session_state.study_messages.append(
+                {"role": "assistant", "content": response}
+            )
+
+        # Display chat history
+        for msg in st.session_state.study_messages:
+            with st.chat_message(msg["role"]):
+                st.write(msg["content"])
 # ==========================================================
 # ================= ADMIN PORTAL ===========================
 # ==========================================================
@@ -1038,6 +1142,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

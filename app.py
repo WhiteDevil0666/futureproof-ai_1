@@ -329,6 +329,28 @@ Return ONLY valid JSON array.
     return safe_json_load(response)
 
 
+def generate_explanation(question, correct_answer):
+
+    prompt = f"""
+Question:
+{question}
+
+Correct Answer:
+{correct_answer}
+
+Explain briefly (2-4 lines) why this answer is correct.
+Keep it educational and clear.
+Do NOT repeat the question.
+Do NOT add extra formatting.
+"""
+
+    return safe_llm_call(
+        MAIN_MODEL,
+        [{"role": "user", "content": prompt}],
+        temperature=0.3
+    ) or "Explanation unavailable."
+
+
 # ================= TIMER CONFIG =================
 def get_time_limit(difficulty):
     if difficulty == "Beginner":
@@ -524,42 +546,33 @@ if "mock_questions" in st.session_state and st.session_state.mock_questions:
     user_answers = []
     score = 0
 
-    # ================= QUESTION LOOP =================
-    for i, q in enumerate(st.session_state.mock_questions):
-
-        st.markdown(f"### Q{i+1}. {q['question']}")
-
-        selected = st.radio(
-            "",
-            q["options"],
-            index=None,
-            key=f"mock_{i}"
-        )
-
-        user_answers.append(selected)
-
-        # AFTER SUBMISSION SHOW ANSWER FEEDBACK
-        if "exam_submitted" in st.session_state and st.session_state.exam_submitted:
-
-            correct_answer = q["answer"]
-
-            if selected == correct_answer:
-                st.success(f"✅ Correct Answer: {correct_answer}")
-            else:
-                st.error(f"❌ Your Answer: {selected}")
-                st.info(f"✔ Correct Answer: {correct_answer}")
-
     # ================= SUBMIT TEST =================
     if st.button("Submit Test") or auto_submit:
 
         st.session_state.exam_submitted = True
 
+        score = 0
+
+        # Calculate score
         for i, q in enumerate(st.session_state.mock_questions):
             if user_answers[i] == q["answer"]:
                 score += 1
 
         percent = (score / len(st.session_state.mock_questions)) * 100
 
+        # Generate explanations once
+        if "explanations" not in st.session_state:
+            st.session_state.explanations = {}
+
+        for i, q in enumerate(st.session_state.mock_questions):
+            if i not in st.session_state.explanations:
+                explanation = generate_explanation(
+                    q["question"],
+                    q["answer"]
+                )
+                st.session_state.explanations[i] = explanation
+
+        # ================= RESULT DISPLAY =================
         st.markdown("## 📊 Test Result")
         st.markdown(f"### Score: {score}/10")
         st.markdown(f"### Percentage: {percent:.2f}%")
@@ -615,3 +628,4 @@ elif page == "🔐 Admin Portal":
         else:
             st.error("❌ Invalid Admin Credentials")        
         
+

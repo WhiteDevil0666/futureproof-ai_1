@@ -137,26 +137,30 @@ button[data-baseweb="tab"] span {
     opacity: 1 !important;
 }
 
-/* ================= METRIC VISIBILITY FIX ================= */
+/* ================= METRIC VISIBILITY FINAL FIX ================= */
 
 div[data-testid="stMetric"] {
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.08);
-    padding: 20px;
-    border-radius: 12px;
+    background: rgba(255,255,255,0.08) !important;
+    padding: 22px !important;
+    border-radius: 14px !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
 }
 
-div[data-testid="stMetricLabel"] {
+/* Target ALL possible metric label layers */
+div[data-testid="stMetric"] label,
+div[data-testid="stMetric"] span,
+div[data-testid="stMetric"] div:first-child {
     color: #ffffff !important;
     font-weight: 700 !important;
-    font-size: 16px !important;
     opacity: 1 !important;
+    font-size: 16px !important;
 }
 
+/* Force metric value bright */
 div[data-testid="stMetricValue"] {
     color: #ffffff !important;
-    font-weight: 800 !important;
-    font-size: 28px !important;
+    font-weight: 900 !important;
+    font-size: 32px !important;
     opacity: 1 !important;
 }
 /* Extra safety for Streamlit tab text */
@@ -989,6 +993,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

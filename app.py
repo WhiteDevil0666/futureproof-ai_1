@@ -396,7 +396,44 @@ def save_mock_result(data_row):
             sheet = client_gs.create("FutureProof_Mock_Results").sheet1
         sheet.append_row(data_row)
     except Exception as e:
-        st.error(f"Mock Sheet Error: {str(e)}")# ==========================================================
+        st.error(f"Mock Sheet Error: {str(e)}")
+
+
+# ================= ADMIN ANALYTICS =================
+
+@st.cache_data(ttl=300)
+def load_mock_results():
+    try:
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+
+        creds = Credentials.from_service_account_info(
+            st.secrets["GOOGLE_SERVICE_ACCOUNT"],
+            scopes=scopes
+        )
+
+        client_gs = gspread.authorize(creds)
+
+        sheet = client_gs.open("FutureProof_Mock_Results").sheet1
+
+        data = sheet.get_all_records()
+
+        if not data:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(data)
+
+        return df
+
+    except Exception as e:
+        st.error(f"Analytics Load Error: {str(e)}")
+        return pd.DataFrame()
+
+
+
+# ==========================================================
 # ================= SKILL INTELLIGENCE =====================
 # ==========================================================
 
@@ -655,22 +692,74 @@ elif page == "🔐 Admin Portal":
     if st.button("Login"):
 
         if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+
             st.success("✅ Admin Logged In")
 
-            st.markdown("### 📊 System Logs")
-            if os.path.exists("api_usage_log.txt"):
-                with open("api_usage_log.txt", "r") as f:
-                    logs = f.read()
-                st.text_area("API Usage Logs", logs, height=300)
+            df = load_mock_results()
 
-            if os.path.exists("feedback_log.txt"):
-                with open("feedback_log.txt", "r") as f:
-                    feedback_logs = f.read()
-                st.text_area("Feedback Logs", feedback_logs, height=300)
+            if df.empty:
+                st.warning("No mock test data available yet.")
+                st.stop()
+
+            # ================= SUMMARY METRICS =================
+            st.markdown("## 📊 Platform Overview")
+
+            total_tests = len(df)
+            avg_score = df["percent"].astype(float).mean()
+            pass_rate = (df["percent"].astype(float) >= 80).mean() * 100
+
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                st.metric("Total Tests", total_tests)
+
+            with col2:
+                st.metric("Average Score", f"{avg_score:.2f}%")
+
+            with col3:
+                st.metric("Pass Rate", f"{pass_rate:.2f}%")
+
+            st.divider()
+
+            # ================= DIFFICULTY ANALYSIS =================
+            st.markdown("## 📈 Difficulty Breakdown")
+
+            difficulty_counts = df["difficulty"].value_counts()
+
+            st.bar_chart(difficulty_counts)
+
+            st.divider()
+
+            # ================= SCORE DISTRIBUTION =================
+            st.markdown("## 📊 Score Distribution")
+
+            st.histogram = df["percent"].astype(float)
+            st.bar_chart(df["percent"].astype(float))
+
+            st.divider()
+
+            # ================= TOP PERFORMERS =================
+            st.markdown("## 🏆 Top Performers")
+
+            top_5 = df.sort_values("percent", ascending=False).head(5)
+
+            st.dataframe(top_5[[
+                "candidate_name",
+                "candidate_email",
+                "difficulty",
+                "percent"
+            ]])
+
+            st.divider()
+
+            # ================= RAW DATA =================
+            st.markdown("## 📂 Full Dataset")
+
+            st.dataframe(df)
 
         else:
             st.error("❌ Invalid Admin Credentials")        
-        
+
 
 
 

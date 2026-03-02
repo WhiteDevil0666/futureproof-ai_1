@@ -553,9 +553,12 @@ if "mock_questions" in st.session_state and st.session_state.mock_questions:
 
         score = 0
 
-        # Calculate score
+        # Calculate score safely from session_state
         for i, q in enumerate(st.session_state.mock_questions):
-            if user_answers[i] == q["answer"]:
+
+            selected = st.session_state.get(f"mock_{i}")
+
+            if selected == q["answer"]:
                 score += 1
 
         percent = (score / len(st.session_state.mock_questions)) * 100
@@ -628,4 +631,5 @@ elif page == "🔐 Admin Portal":
         else:
             st.error("❌ Invalid Admin Credentials")        
         
+
 

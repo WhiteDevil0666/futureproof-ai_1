@@ -540,10 +540,18 @@ elif page == "🎓 Mock Assessment":
         "Education Level",
         ["High School", "Diploma", "Graduation", "Post Graduation", "Other"]
     )
+
     skills_input = st.text_input("Skills (comma-separated)")
+
     difficulty = st.selectbox(
         "Select Difficulty",
         ["Beginner", "Intermediate", "Expert"]
+    )
+
+    # ✅ NEW: Test Mode Selector
+    test_mode = st.selectbox(
+        "Select Test Mode",
+        ["Theoretical Knowledge", "Logical Thinking", "Coding Based"]
     )
 
     if "mock_questions" not in st.session_state:
@@ -553,17 +561,21 @@ elif page == "🎓 Mock Assessment":
     if st.button("Generate Test"):
 
         skills = normalize_skills(skills_input)
-        questions = generate_mcqs(skills, difficulty)
 
-        if questions:
+        questions = generate_mcqs(skills, difficulty, test_mode)
+
+        if questions and isinstance(questions, list):
+
             st.session_state.mock_questions = questions
             st.session_state.start_time = time.time()
             st.session_state.time_limit = get_time_limit(difficulty)
+
             st.session_state.exam_submitted = False
             st.session_state.explanations = {}
             st.session_state.result_saved = False
+
         else:
-            st.error("Failed to generate test questions.")
+            st.error("Failed to generate test questions. Try again.")
 
     # ================= DISPLAY QUESTIONS =================
     if st.session_state.get("mock_questions"):
@@ -593,26 +605,30 @@ elif page == "🎓 Mock Assessment":
             for i, q in enumerate(st.session_state.mock_questions):
 
                 selected = st.session_state.get(f"mock_{i}")
-                correct_answer = q["answer"]
+                correct_answer = q.get("answer")
 
-                # --- SAFE ANSWER HANDLING ---
+                # ---------- SAFE ANSWER HANDLING ----------
+                correct_option = None
+
                 if isinstance(correct_answer, int):
-                    correct_option = q["options"][correct_answer]
+                    if correct_answer < len(q["options"]):
+                        correct_option = q["options"][correct_answer]
 
-                elif correct_answer in q["options"]:
-                    correct_option = correct_answer
+                elif isinstance(correct_answer, str):
 
-                elif correct_answer in ["A", "B", "C", "D"]:
-                    index_map = {"A": 0, "B": 1, "C": 2, "D": 3}
-                    correct_option = q["options"][index_map[correct_answer]]
+                    if correct_answer in q["options"]:
+                        correct_option = correct_answer
 
-                else:
-                    correct_option = correct_answer
+                    elif correct_answer in ["A", "B", "C", "D"]:
+                        index_map = {"A": 0, "B": 1, "C": 2, "D": 3}
+                        idx = index_map[correct_answer]
+                        if idx < len(q["options"]):
+                            correct_option = q["options"][idx]
 
                 if selected == correct_option:
                     score += 1
 
-                # Generate explanation once
+                # ---------- GENERATE EXPLANATION ----------
                 if i not in st.session_state.explanations:
                     explanation = generate_explanation(
                         q["question"],
@@ -626,10 +642,8 @@ elif page == "🎓 Mock Assessment":
             st.session_state.final_percent = percent
 
             # Stop timer
-            if "start_time" in st.session_state:
-                del st.session_state.start_time
-            if "time_limit" in st.session_state:
-                del st.session_state.time_limit
+            st.session_state.pop("start_time", None)
+            st.session_state.pop("time_limit", None)
 
         # ================= QUESTION LOOP =================
         for i, q in enumerate(st.session_state.mock_questions):
@@ -646,21 +660,24 @@ elif page == "🎓 Mock Assessment":
 
             if st.session_state.get("exam_submitted"):
 
-                correct_answer = q["answer"]
+                correct_answer = q.get("answer")
+                correct_option = None
 
-                # --- SAFE ANSWER HANDLING AGAIN ---
+                # ---------- SAFE ANSWER HANDLING ----------
                 if isinstance(correct_answer, int):
-                    correct_option = q["options"][correct_answer]
+                    if correct_answer < len(q["options"]):
+                        correct_option = q["options"][correct_answer]
 
-                elif correct_answer in q["options"]:
-                    correct_option = correct_answer
+                elif isinstance(correct_answer, str):
 
-                elif correct_answer in ["A", "B", "C", "D"]:
-                    index_map = {"A": 0, "B": 1, "C": 2, "D": 3}
-                    correct_option = q["options"][index_map[correct_answer]]
+                    if correct_answer in q["options"]:
+                        correct_option = correct_answer
 
-                else:
-                    correct_option = correct_answer
+                    elif correct_answer in ["A", "B", "C", "D"]:
+                        index_map = {"A": 0, "B": 1, "C": 2, "D": 3}
+                        idx = index_map[correct_answer]
+                        if idx < len(q["options"]):
+                            correct_option = q["options"][idx]
 
                 if selected == correct_option:
                     st.success(f"✅ Correct Answer: {correct_option}")
@@ -675,15 +692,15 @@ elif page == "🎓 Mock Assessment":
         if st.session_state.get("exam_submitted"):
 
             st.markdown("## 📊 Test Result")
-            st.markdown(f"### Score: {st.session_state.final_score}/10")
-            st.markdown(f"### Percentage: {st.session_state.final_percent:.2f}%")
+            st.markdown(f"### Score: {st.session_state.get('final_score', 0)}/10")
+            st.markdown(f"### Percentage: {st.session_state.get('final_percent', 0):.2f}%")
 
-            if st.session_state.final_percent >= 80:
+            if st.session_state.get("final_percent", 0) >= 80:
                 st.success("✅ Qualified (80%+)")
             else:
                 st.error("❌ Not Qualified (Below 80%)")
 
-            # Save only once
+            # Save once
             if not st.session_state.get("result_saved"):
 
                 save_mock_result([
@@ -693,8 +710,8 @@ elif page == "🎓 Mock Assessment":
                     candidate_education,
                     skills_input,
                     difficulty,
-                    st.session_state.final_score,
-                    st.session_state.final_percent
+                    st.session_state.get("final_score", 0),
+                    st.session_state.get("final_percent", 0)
                 ])
 
                 st.session_state.result_saved = True
@@ -813,6 +830,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

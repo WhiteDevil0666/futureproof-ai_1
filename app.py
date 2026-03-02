@@ -309,15 +309,58 @@ Keep response short and strictly career-focused.
     return safe_llm_call(MAIN_MODEL, [{"role": "user", "content": prompt}]) or \
            "Confidence: 70%\nRisk: Medium\nSummary: Moderate outlook."
 
-def generate_mcqs(skills, difficulty):
-    prompt = f"""
-Create 10 advanced multiple choice questions.
-Skills: {", ".join(skills)}
-Difficulty: {difficulty}
+def generate_mcqs(skills, difficulty, test_mode):
 
-Avoid basic questions.
-Return ONLY valid JSON array.
-"""
+    if test_mode == "Theoretical Knowledge":
+        mode_instruction = """
+        Generate theory-based conceptual multiple choice questions.
+        Focus on definitions, comparisons, and best practices.
+        Do NOT include code snippets.
+        """
+
+    elif test_mode == "Logical Thinking":
+        mode_instruction = """
+        Generate logical reasoning and scenario-based questions
+        related to the provided skills.
+        Focus on analytical and problem-solving ability.
+        """
+
+    elif test_mode == "Coding Based":
+        mode_instruction = """
+        Generate practical coding-based questions.
+        Include code snippets, debugging, output prediction,
+        and algorithmic thinking.
+        """
+
+    else:
+        mode_instruction = "Generate skill-based multiple choice questions."
+
+    prompt = f"""
+    Create 10 multiple choice questions.
+
+    Skills: {", ".join(skills)}
+    Difficulty: {difficulty}
+
+    {mode_instruction}
+
+    STRICT FORMAT:
+    Return ONLY valid JSON array like this:
+
+    [
+        {{
+            "question": "Question text",
+            "options": ["Option A", "Option B", "Option C", "Option D"],
+            "answer": 0
+        }}
+    ]
+
+    IMPORTANT:
+    - Exactly 4 options per question
+    - answer must be index (0,1,2,3)
+    - No explanations
+    - No markdown
+    """
+
     response = safe_llm_call(
         MCQ_MODEL,
         [
@@ -326,8 +369,13 @@ Return ONLY valid JSON array.
         ],
         temperature=0.4
     )
-    return safe_json_load(response)
 
+    data = safe_json_load(response)
+
+    if isinstance(data, list):
+        return data
+
+    return None
 
 def generate_explanation(question, correct_answer):
 
@@ -830,6 +878,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

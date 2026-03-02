@@ -174,6 +174,30 @@ div[data-testid="stTabs"] button[aria-selected="true"] {
     border-bottom: 3px solid #3b82f6 !important;
     color: #ffffff !important;
 }
+/* ================= CHAT VISIBILITY FIX ================= */
+
+/* Chat message container */
+div[data-testid="stChatMessage"] {
+    background-color: rgba(255,255,255,0.05) !important;
+    border-radius: 12px !important;
+    padding: 12px !important;
+}
+
+/* Chat text color */
+div[data-testid="stChatMessage"] * {
+    color: #ffffff !important;
+    opacity: 1 !important;
+}
+
+/* User message bubble */
+div[data-testid="stChatMessage"][data-testid*="user"] {
+    background: linear-gradient(90deg, #6366f1, #3b82f6) !important;
+}
+
+/* Assistant message bubble */
+div[data-testid="stChatMessage"][data-testid*="assistant"] {
+    background: rgba(255,255,255,0.08) !important;
+}
 </style>
 """, unsafe_allow_html=True)
 st.markdown('<div class="main-title">🚀 FutureProof Skill Intelligence Engine</div>', unsafe_allow_html=True)
@@ -1142,6 +1166,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

@@ -701,12 +701,37 @@ elif page == "🔐 Admin Portal":
                 st.warning("No mock test data available yet.")
                 st.stop()
 
+            # ================= CLEAN & STANDARDIZE COLUMNS =================
+            df.columns = df.columns.str.strip().str.lower()
+
+            df = df.rename(columns={
+                "percentage": "percent",
+                "marks": "score",
+                "level of exam": "difficulty",
+                "education level": "education",
+                "name": "candidate_name",
+                "email": "candidate_email",
+                "timestamp": "timestamp",
+                "skills": "skills"
+            })
+
+            required_columns = ["percent", "difficulty", "score"]
+
+            for col in required_columns:
+                if col not in df.columns:
+                    st.error(f"Missing column: {col}")
+                    st.write("Available columns:", df.columns)
+                    st.stop()
+
+            df["percent"] = pd.to_numeric(df["percent"], errors="coerce")
+            df["score"] = pd.to_numeric(df["score"], errors="coerce")
+
             # ================= SUMMARY METRICS =================
             st.markdown("## 📊 Platform Overview")
 
             total_tests = len(df)
-            avg_score = df["percent"].astype(float).mean()
-            pass_rate = (df["percent"].astype(float) >= 80).mean() * 100
+            avg_score = df["percent"].mean()
+            pass_rate = (df["percent"] >= 80).mean() * 100
 
             col1, col2, col3 = st.columns(3)
 
@@ -733,8 +758,7 @@ elif page == "🔐 Admin Portal":
             # ================= SCORE DISTRIBUTION =================
             st.markdown("## 📊 Score Distribution")
 
-            st.histogram = df["percent"].astype(float)
-            st.bar_chart(df["percent"].astype(float))
+            st.bar_chart(df["percent"])
 
             st.divider()
 
@@ -752,13 +776,13 @@ elif page == "🔐 Admin Portal":
 
             st.divider()
 
-            # ================= RAW DATA =================
+            # ================= FULL DATASET =================
             st.markdown("## 📂 Full Dataset")
 
             st.dataframe(df)
 
         else:
-            st.error("❌ Invalid Admin Credentials")        
+            st.error("❌ Invalid Admin Credentials")
 
 
 

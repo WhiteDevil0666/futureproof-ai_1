@@ -800,55 +800,65 @@ elif page == "🎓 Mock Assessment":
                 seconds = remaining % 60
                 st.markdown(f"### ⏳ Time Remaining: {minutes:02d}:{seconds:02d}")
 
-        # ================= HANDLE SUBMISSION =================
-        if (st.button("Submit Test") or auto_submit) and not st.session_state.get("exam_submitted"):
+# ================= HANDLE SUBMISSION =================
+if (st.button("Submit Test") or auto_submit) and not st.session_state.get("exam_submitted"):
 
-            st.session_state.exam_submitted = True
-            score = 0
+    st.session_state.exam_submitted = True
+    score = 0
 
-            for i, q in enumerate(st.session_state.mock_questions):
+    for i, q in enumerate(st.session_state.mock_questions):
 
-                selected = st.session_state.get(f"mock_{i}")
-                correct_answer = q.get("answer")
+        selected = st.session_state.get(f"mock_{i}")
+        correct_answer = q.get("answer")
+        correct_option = None
 
-                # ---------- SAFE ANSWER HANDLING ----------
-                correct_option = None
+        # ---------- SAFE ANSWER HANDLING ----------
+        if isinstance(correct_answer, int):
+            if 0 <= correct_answer < len(q["options"]):
+                correct_option = q["options"][correct_answer]
 
-                if isinstance(correct_answer, int):
-                    if correct_answer < len(q["options"]):
-                        correct_option = q["options"][correct_answer]
+        elif isinstance(correct_answer, str):
+            correct_answer = correct_answer.strip()
 
-                elif isinstance(correct_answer, str):
+            # If numeric string like "1"
+            if correct_answer.isdigit():
+                idx = int(correct_answer)
+                if 0 <= idx < len(q["options"]):
+                    correct_option = q["options"][idx]
 
-                    if correct_answer in q["options"]:
-                        correct_option = correct_answer
+            # If exact option text
+            elif correct_answer in q["options"]:
+                correct_option = correct_answer
 
-                    elif correct_answer in ["A", "B", "C", "D"]:
-                        index_map = {"A": 0, "B": 1, "C": 2, "D": 3}
-                        idx = index_map[correct_answer]
-                        if idx < len(q["options"]):
-                            correct_option = q["options"][idx]
+            # If A/B/C/D format
+            elif correct_answer in ["A", "B", "C", "D"]:
+                index_map = {"A": 0, "B": 1, "C": 2, "D": 3}
+                idx = index_map[correct_answer]
+                if idx < len(q["options"]):
+                    correct_option = q["options"][idx]
 
-                if selected == correct_option:
-                    score += 1
+        # ---------- SAFE COMPARISON ----------
+        if selected and correct_option:
+            if selected.strip().lower() == correct_option.strip().lower():
+                score += 1
 
-                # ---------- GENERATE EXPLANATION ----------
-                if i not in st.session_state.explanations:
-                    explanation = generate_explanation(
-                        q["question"],
-                        correct_option
-                    )
-                    st.session_state.explanations[i] = explanation
+        # ---------- GENERATE EXPLANATION ----------
+        if i not in st.session_state.explanations:
+            explanation = generate_explanation(
+                q["question"],
+                correct_option
+            )
+            st.session_state.explanations[i] = explanation
 
-            percent = (score / len(st.session_state.mock_questions)) * 100
+    # ---------- FINAL RESULT CALCULATION ----------
+    percent = (score / len(st.session_state.mock_questions)) * 100
 
-            st.session_state.final_score = score
-            st.session_state.final_percent = percent
+    st.session_state.final_score = score
+    st.session_state.final_percent = percent
 
-            # Stop timer
-            st.session_state.pop("start_time", None)
-            st.session_state.pop("time_limit", None)
-
+    # Stop timer
+    st.session_state.pop("start_time", None)
+    st.session_state.pop("time_limit", None)
         # ================= QUESTION LOOP =================
         for i, q in enumerate(st.session_state.mock_questions):
 
@@ -1034,6 +1044,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

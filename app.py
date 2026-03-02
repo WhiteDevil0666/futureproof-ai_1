@@ -593,9 +593,21 @@ elif page == "🎓 Mock Assessment":
             for i, q in enumerate(st.session_state.mock_questions):
 
                 selected = st.session_state.get(f"mock_{i}")
+                correct_answer = q["answer"]
 
-                correct_index = q["answer"]
-                correct_option = q["options"][correct_index]
+                # --- SAFE ANSWER HANDLING ---
+                if isinstance(correct_answer, int):
+                    correct_option = q["options"][correct_answer]
+
+                elif correct_answer in q["options"]:
+                    correct_option = correct_answer
+
+                elif correct_answer in ["A", "B", "C", "D"]:
+                    index_map = {"A": 0, "B": 1, "C": 2, "D": 3}
+                    correct_option = q["options"][index_map[correct_answer]]
+
+                else:
+                    correct_option = correct_answer
 
                 if selected == correct_option:
                     score += 1
@@ -632,11 +644,23 @@ elif page == "🎓 Mock Assessment":
                 disabled=st.session_state.get("exam_submitted", False)
             )
 
-            # SHOW CORRECT ANSWER AFTER SUBMISSION
             if st.session_state.get("exam_submitted"):
 
-                correct_index = q["answer"]
-                correct_option = q["options"][correct_index]
+                correct_answer = q["answer"]
+
+                # --- SAFE ANSWER HANDLING AGAIN ---
+                if isinstance(correct_answer, int):
+                    correct_option = q["options"][correct_answer]
+
+                elif correct_answer in q["options"]:
+                    correct_option = correct_answer
+
+                elif correct_answer in ["A", "B", "C", "D"]:
+                    index_map = {"A": 0, "B": 1, "C": 2, "D": 3}
+                    correct_option = q["options"][index_map[correct_answer]]
+
+                else:
+                    correct_option = correct_answer
 
                 if selected == correct_option:
                     st.success(f"✅ Correct Answer: {correct_option}")
@@ -673,11 +697,7 @@ elif page == "🎓 Mock Assessment":
                     st.session_state.final_percent
                 ])
 
-                st.session_state.result_saved = True            # # STOP TIMER
-            # if "start_time" in st.session_state:
-            #     del st.session_state.start_time
-            # if "time_limit" in st.session_state:
-            #     del st.session_state.time_limit
+                st.session_state.result_saved = True
 # ==========================================================
 # ================= ADMIN PORTAL ===========================
 # ==========================================================
@@ -793,6 +813,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

@@ -289,40 +289,26 @@ Domain: {domain}
 
 You are a career evaluation engine.
 
-Return ONLY valid JSON in this format:
+Provide ONLY:
 
-{{
-  "confidence": 0-100,
-  "risk": "Low/Medium/High",
-  "summary": "2-3 lines strictly about job demand and stability"
-}}
+Confidence: X% (numeric realistic hiring confidence)
+Risk: Low/Medium/High
+Summary: 2-3 lines about job market demand and career stability.
 
-Rules:
-- Confidence must be integer
-- Risk must be one word
-- Do NOT add explanations
-- Do NOT add extra keys
-- Do NOT add markdown
+DO NOT:
+- Propose projects
+- Suggest implementation plans
+- Provide technical design
+- Provide budget
+- Provide roadmap
+- Provide company strategy
+
+Keep response short and strictly career-focused.
 """
 
-    response = safe_llm_call(
-        MAIN_MODEL,
-        [
-            {"role": "system", "content": "Return strictly valid JSON only."},
-            {"role": "user", "content": prompt}
-        ]
-    )
+    return safe_llm_call(MAIN_MODEL, [{"role": "user", "content": prompt}]) or \
+           "Confidence: 70%\nRisk: Medium\nSummary: Moderate outlook."
 
-    data = safe_json_load(response)
-
-    if data and "confidence" in data:
-        return data
-    else:
-        return {
-            "confidence": 70,
-            "risk": "Medium",
-            "summary": "Moderate hiring outlook."
-        }
 def generate_mcqs(skills, difficulty):
     prompt = f"""
 Create 10 advanced multiple choice questions.
@@ -433,15 +419,7 @@ if page == "🔎 Skill Intelligence":
         with tab1:
             st.header(role)
             st.markdown(f"🧭 Detected Domain: `{domain}`")
-
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Hiring Confidence", f"{confidence['confidence']}%")
-            with col2:
-                st.metric("Market Risk", confidence["risk"])
-
-            st.markdown("### 📌 Career Outlook")
-            st.markdown(confidence["summary"])
+            st.code(confidence)
 
         with tab2:
             for skill in growth:
@@ -637,18 +615,3 @@ elif page == "🔐 Admin Portal":
         else:
             st.error("❌ Invalid Admin Credentials")        
         
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

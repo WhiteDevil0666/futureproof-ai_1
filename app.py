@@ -735,36 +735,47 @@ elif page == "🔐 Admin Portal":
 
             col1, col2, col3 = st.columns(3)
 
+            # Define metric card INSIDE login block
+            def metric_card(title, value):
+                st.markdown(f"""
+                    <div style="
+                        background: rgba(255,255,255,0.05);
+                        padding: 20px;
+                        border-radius: 12px;
+                        text-align: center;
+                        border: 1px solid rgba(255,255,255,0.1);
+                    ">
+                        <h4 style="color:#94a3b8; margin-bottom:10px;">{title}</h4>
+                        <h2 style="color:white; font-weight:700;">{value}</h2>
+                    </div>
+                """, unsafe_allow_html=True)
+
             with col1:
-                st.metric("Total Tests", total_tests)
+                metric_card("Total Tests", total_tests)
 
             with col2:
-                st.metric("Average Score", f"{avg_score:.2f}%")
+                metric_card("Average Score", f"{avg_score:.2f}%")
 
             with col3:
-                st.metric("Pass Rate", f"{pass_rate:.2f}%")
+                metric_card("Pass Rate", f"{pass_rate:.2f}%")
 
             st.divider()
 
             # ================= DIFFICULTY ANALYSIS =================
             st.markdown("## 📈 Difficulty Breakdown")
-
             difficulty_counts = df["difficulty"].value_counts()
-
             st.bar_chart(difficulty_counts)
 
             st.divider()
 
             # ================= SCORE DISTRIBUTION =================
             st.markdown("## 📊 Score Distribution")
-
             st.bar_chart(df["percent"])
 
             st.divider()
 
             # ================= TOP PERFORMERS =================
             st.markdown("## 🏆 Top Performers")
-
             top_5 = df.sort_values("percent", ascending=False).head(5)
 
             st.dataframe(top_5[[
@@ -778,7 +789,6 @@ elif page == "🔐 Admin Portal":
 
             # ================= FULL DATASET =================
             st.markdown("## 📂 Full Dataset")
-
             st.dataframe(df)
 
         else:

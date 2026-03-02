@@ -292,6 +292,29 @@ Return comma-separated only.
     raw = re.split(r",|\n", response)
     return [s.strip().title() for s in raw if s.strip()][:6]
 
+def generate_certifications(role, domain):
+    prompt = f"""
+Role: {role}
+Domain: {domain}
+
+Suggest 6 globally recognized certifications relevant to this role.
+Return comma-separated names only.
+No explanations.
+No numbering.
+"""
+
+    response = safe_llm_call(
+        MAIN_MODEL,
+        [{"role": "user", "content": prompt}],
+        temperature=0.3
+    )
+
+    if not response:
+        return []
+
+    raw = re.split(r",|\n", response)
+    return [c.strip() for c in raw if c.strip()][:6]
+
 def generate_platforms(role, domain, skills):
 
     prompt = f"""
@@ -1011,6 +1034,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

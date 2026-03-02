@@ -504,15 +504,15 @@ if page == "🔎 Skill Intelligence":
         skills = normalize_skills(skills_input)
         skills_tuple = tuple(skills)
 
-        domain = detect_domain_cached(skills_tuple)
-        role = infer_role_cached(skills_tuple, domain)
+        domain = detect_domain_cached(skills_tuple) or "General Domain"
+        role = infer_role_cached(skills_tuple, domain) or "Specialist"
 
         with ThreadPoolExecutor() as executor:
-            growth = executor.submit(generate_growth, role, domain).result()
-            certifications = executor.submit(generate_certifications, role, domain).result()
-            market = executor.submit(generate_market, role, domain).result()
-            confidence = executor.submit(generate_confidence, role, domain).result()
-            platforms = executor.submit(generate_platforms, role, domain, skills).result()
+            growth = executor.submit(generate_growth, role, domain).result() or []
+            certifications = executor.submit(generate_certifications, role, domain).result() or []
+            market = executor.submit(generate_market, role, domain).result() or "Market data unavailable."
+            confidence = executor.submit(generate_confidence, role, domain).result() or {}
+            platforms = executor.submit(generate_platforms, role, domain, skills).result() or {"free": [], "paid": []}
 
         weeks = round((len(growth) * 40) / hours) if hours else 0
 
@@ -523,20 +523,43 @@ if page == "🔎 Skill Intelligence":
             "🌍 Market Outlook"
         ])
 
+        # ================= ROLE ALIGNMENT =================
         with tab1:
             st.header(role)
             st.markdown(f"🧭 Detected Domain: `{domain}`")
-            st.code(confidence)
 
+            # Safe structured display
+            confidence_value = confidence.get("confidence", 70)
+            risk_value = confidence.get("risk", "Medium")
+            summary_value = confidence.get("summary", "Moderate job outlook.")
+
+            colA, colB = st.columns(2)
+            with colA:
+                st.metric("Hiring Confidence", f"{confidence_value}%")
+            with colB:
+                st.metric("Market Risk", risk_value)
+
+            st.markdown("### 📌 Career Outlook")
+            st.markdown(summary_value)
+
+        # ================= COMPETITIVENESS PLAN =================
         with tab2:
-            for skill in growth:
-                st.markdown(f"✔️ {skill}")
-            st.markdown(f"⏳ Estimated Timeline: ~{weeks} weeks")
+            if growth:
+                for skill in growth:
+                    st.markdown(f"✔️ {skill}")
+                st.markdown(f"⏳ Estimated Timeline: ~{weeks} weeks")
+            else:
+                st.info("No skill recommendations available.")
 
+        # ================= CERTIFICATIONS =================
         with tab3:
             st.markdown("### 🎓 Recommended Certifications")
-            for cert in certifications:
-                st.markdown(f"- {cert}")
+
+            if certifications:
+                for cert in certifications:
+                    st.markdown(f"- {cert}")
+            else:
+                st.info("No certifications available.")
 
             st.markdown("---")
             st.markdown("### 🌐 Certification Platforms (Domain-Specific)")
@@ -549,6 +572,7 @@ if page == "🔎 Skill Intelligence":
             for item in platforms.get("paid", []):
                 st.markdown(f"- [{item['name']}]({item['url']})")
 
+        # ================= MARKET OUTLOOK =================
         with tab4:
             st.markdown(market)
 
@@ -573,7 +597,6 @@ if page == "🔎 Skill Intelligence":
             ])
 
             st.success("✅ Feedback saved successfully!")
-
 # ==========================================================
 # ================= MOCK ASSESSMENT ========================
 # ==========================================================
@@ -878,6 +901,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

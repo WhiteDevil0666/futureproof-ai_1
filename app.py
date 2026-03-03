@@ -952,13 +952,11 @@ if page == "🔎 Skill Intelligence":
         domain = detect_domain_cached(skills_tuple) or "General Domain"
         role = infer_role_cached(skills_tuple, domain) or "Specialist"
 
-        with ThreadPoolExecutor() as executor:
-            growth = executor.submit(generate_growth, role, domain).result() or []
-            certifications = executor.submit(generate_certifications, role, domain).result() or []
-            market = executor.submit(generate_market, role, domain).result() or "Market data unavailable."
-            confidence = executor.submit(generate_confidence, role, domain).result()
-            platforms = executor.submit(generate_platforms, role, domain, skills).result() or {"free": [], "paid": []}
-
+        growth = generate_growth(role, domain) or []
+        certifications = generate_certifications(role, domain) or []
+        market = generate_market(role, domain) or "Market data unavailable."
+        confidence = generate_confidence(role, domain)
+        platforms = generate_platforms(role, domain, skills) or {"free": [], "paid": []}
         weeks = round((len(growth) * 40) / hours) if hours else 0
 
         tab1, tab2, tab3, tab4 = st.tabs([
@@ -1799,6 +1797,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

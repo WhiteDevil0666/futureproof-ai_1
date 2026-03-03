@@ -263,7 +263,8 @@ page = st.sidebar.radio(
     [
         "🔎 Skill Intelligence",
         "🎓 Mock Assessment",
-        "📚 Guided Study Chat",   # 👈 ADD THIS
+        "📚 Guided Study Chat",
+        "💼 AI Job Finder (Premium)",  
         "🔐 Admin Portal"
     ]
 )
@@ -284,6 +285,9 @@ if page != "📚 Guided Study Chat":
         del st.session_state.study_messages
     if "study_context" in st.session_state:
         del st.session_state.study_context
+if page != "💼 AI Job Finder (Premium)":
+    if "job_analysis_result" in st.session_state:
+        del st.session_state.job_analysis_result
 
 # ================= UTILITIES =================
 
@@ -1361,6 +1365,111 @@ RULES:
                 )
 
             del st.session_state.quick_test
+
+
+
+# ==========================================================
+# ================= AI JOB FINDER (PREMIUM) ================
+# ==========================================================
+
+elif page == "💼 AI Job Finder (Premium)":
+
+    st.header("💼 AI Career Job Finder")
+    st.success("🎯 AI-Powered Smart Job Matching Activated")
+
+    name = st.text_input("Full Name")
+    age = st.number_input("Age", min_value=16, max_value=65, step=1)
+
+    education = st.selectbox(
+        "Education Level",
+        ["High School", "Diploma", "Graduation", "Post Graduation", "Other"]
+    )
+
+    skills_input = st.text_input("Skills (comma-separated)")
+
+    experience = st.selectbox(
+        "Years of Experience",
+        ["Fresher", "1-2 Years", "3-5 Years", "5+ Years"]
+    )
+
+    current_field = st.text_input("Current Field / Industry")
+
+    target_role = st.text_input("Target Job Profile You Are Looking For")
+
+    resume_file = st.file_uploader("Upload Resume (TXT only for now)", type=["txt"])
+
+    if st.button("🔍 Find Suitable Jobs"):
+
+        if name and skills_input and target_role:
+
+            skills = normalize_skills(skills_input)
+
+            resume_text = ""
+
+            if resume_file is not None:
+                try:
+                    resume_text = resume_file.read().decode("utf-8")
+                except:
+                    resume_text = "Resume uploaded"
+
+            prompt = f"""
+You are an AI Career Placement Advisor.
+
+Candidate Profile:
+Name: {name}
+Age: {age}
+Education: {education}
+Skills: {", ".join(skills)}
+Experience: {experience}
+Current Field: {current_field}
+Target Job Role: {target_role}
+Resume Summary: {resume_text}
+
+Analyze compatibility between the candidate and the target role.
+
+Provide structured output:
+
+1. Job Fit Score (0-100%)
+2. Strengths for this role
+3. Missing Skills / Gaps
+4. Resume Improvements Required
+5. 3 Alternative Related Roles
+6. Suggested Industries
+7. Recommended Job Search Keywords
+"""
+
+            response = safe_llm_call(
+                "llama-3.3-70b-versatile",
+                [{"role": "user", "content": prompt}],
+                temperature=0.4
+            )
+
+            st.markdown("## 🎯 AI Career Recommendations")
+            st.markdown(response)
+
+            # ================= SMART JOB LINKS =================
+            encoded_role = target_role.replace(" ", "%20")
+
+            st.markdown("### 🔗 Direct Job Search Links")
+
+            st.markdown(
+                f"🔹 [LinkedIn Jobs](https://www.linkedin.com/jobs/search/?keywords={encoded_role})"
+            )
+
+            st.markdown(
+                f"🔹 [Indeed Jobs](https://www.indeed.com/jobs?q={encoded_role})"
+            )
+
+            st.markdown(
+                f"🔹 [Naukri Jobs](https://www.naukri.com/{target_role.replace(' ', '-')}-jobs)"
+            )
+
+            st.markdown(
+                f"🔹 [Glassdoor Jobs](https://www.glassdoor.com/Job/jobs.htm?sc.keyword={encoded_role})"
+            )
+
+        else:
+            st.warning("Please fill all required fields (Name, Skills, Target Role).")
 # ==========================================================
 # ================= ADMIN PORTAL ===========================
 # ==========================================================
@@ -1476,6 +1585,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

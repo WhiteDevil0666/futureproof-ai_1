@@ -319,7 +319,7 @@ def log_api_usage(event_type, status):
 
 def safe_llm_call(model, messages, temperature=0.3, retries=2):
 
-    # 🔥 Automatically read current tracking info
+    # 🔥 Read current tracking info safely
     user = st.session_state.get("current_user", "System")
     feature = st.session_state.get("current_feature", "General")
 
@@ -348,31 +348,53 @@ def safe_llm_call(model, messages, temperature=0.3, retries=2):
             estimated_cost = (total_tokens / 1000) * price_per_1k
 
             # ================= SAVE TO GOOGLE SHEET =================
-            save_api_usage([
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                user,
-                feature,
-                model,
-                prompt_tokens,
-                completion_tokens,
-                total_tokens,
-                round(estimated_cost, 6)
-            ])
+            try:
+                save_api_usage([
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    user,
+                    feature,
+                    model,
+                    prompt_tokens,
+                    completion_tokens,
+                    total_tokens,
+                    round(estimated_cost, 6)
+                ])
+            except Exception as sheet_error:
+                print("Sheet Logging Error:", sheet_error)
 
             log_api_usage(model, "SUCCESS")
 
             return content
 
-        except Exception:
+        except Exception as e:
+            print(f"LLM Attempt {attempt+1} Failed:", e)
             time.sleep(2)
 
     log_api_usage(model, "FAILED")
     return None
 
-def normalize_skills(skills_input):
-    skills = [s.strip().lower() for s in skills_input.split(",") if s.strip()]
-    return list(set(skills))
 
+# ================= SAFE JSON PARSER =================
+
+def safe_json_load(text):
+    try:
+        if not text:
+            return None
+
+        cleaned = text.replace("```json", "").replace("```", "").strip()
+
+        # Extract JSON block safely
+        start = cleaned.find("[")
+        end = cleaned.rfind("]") + 1
+
+        if start != -1 and end != -1:
+            cleaned = cleaned[start:end]
+
+        return json.loads(cleaned)
+
+    except Exception as e:
+        print("JSON Parse Error:", e)
+        return None
 # ================= CACHED FUNCTIONS =================
 
 @st.cache_data(ttl=3600)
@@ -1759,6 +1781,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

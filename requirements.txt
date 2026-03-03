@@ -8,3 +8,5 @@ gspread
 google-auth
 python-dotenv
 groq
+PyPDF2
+Pillow

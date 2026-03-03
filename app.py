@@ -14,10 +14,12 @@ import time
 import warnings
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
-
 from groq import Groq
 import gspread
 from google.oauth2.service_account import Credentials
+import PyPDF2
+from PIL import Image
+import io
 
 warnings.filterwarnings("ignore")
 
@@ -1396,23 +1398,41 @@ elif page == "💼 AI Job Finder (Premium)":
 
     target_role = st.text_input("Target Job Profile You Are Looking For")
 
-    resume_file = st.file_uploader("Upload Resume (TXT only for now)", type=["txt"])
+    resume_file = st.file_uploader(
+        "Upload Resume (PDF, JPG, PNG supported)",
+        type=["pdf", "png", "jpg", "jpeg"]
+    )
 
     if st.button("🔍 Find Suitable Jobs"):
 
         if name and skills_input and target_role:
 
-            skills = normalize_skills(skills_input)
+            with st.spinner("Analyzing profile and matching jobs..."):
 
-            resume_text = ""
+                skills = normalize_skills(skills_input)
 
-            if resume_file is not None:
-                try:
-                    resume_text = resume_file.read().decode("utf-8")
-                except:
-                    resume_text = "Resume uploaded"
+                resume_text = ""
 
-            prompt = f"""
+                # ---------------- PDF Extraction ----------------
+                if resume_file is not None:
+
+                    if resume_file.type == "application/pdf":
+                        try:
+                            import PyPDF2
+                            pdf_reader = PyPDF2.PdfReader(resume_file)
+                            pages = [page.extract_text() for page in pdf_reader.pages]
+                            resume_text = "\n".join(pages)
+                        except:
+                            resume_text = "PDF uploaded (text extraction failed)."
+
+                    # ---------------- IMAGE Upload ----------------
+                    elif resume_file.type in ["image/png", "image/jpeg"]:
+                        from PIL import Image
+                        image = Image.open(resume_file)
+                        st.image(image, caption="Uploaded Resume", use_column_width=True)
+                        resume_text = "Resume uploaded as image."
+
+                prompt = f"""
 You are an AI Career Placement Advisor.
 
 Candidate Profile:
@@ -1423,26 +1443,26 @@ Skills: {", ".join(skills)}
 Experience: {experience}
 Current Field: {current_field}
 Target Job Role: {target_role}
-Resume Summary: {resume_text}
+Resume Content: {resume_text}
 
 Analyze compatibility between the candidate and the target role.
 
 Provide structured output:
 
 1. Job Fit Score (0-100%)
-2. Strengths for this role
-3. Missing Skills / Gaps
-4. Resume Improvements Required
-5. 3 Alternative Related Roles
+2. Strengths
+3. Skill Gaps
+4. Resume Improvements
+5. 3 Alternative Roles
 6. Suggested Industries
 7. Recommended Job Search Keywords
 """
 
-            response = safe_llm_call(
-                "llama-3.3-70b-versatile",
-                [{"role": "user", "content": prompt}],
-                temperature=0.4
-            )
+                response = safe_llm_call(
+                    "llama-3.3-70b-versatile",
+                    [{"role": "user", "content": prompt}],
+                    temperature=0.4
+                )
 
             st.markdown("## 🎯 AI Career Recommendations")
             st.markdown(response)
@@ -1455,21 +1475,18 @@ Provide structured output:
             st.markdown(
                 f"🔹 [LinkedIn Jobs](https://www.linkedin.com/jobs/search/?keywords={encoded_role})"
             )
-
             st.markdown(
                 f"🔹 [Indeed Jobs](https://www.indeed.com/jobs?q={encoded_role})"
             )
-
             st.markdown(
                 f"🔹 [Naukri Jobs](https://www.naukri.com/{target_role.replace(' ', '-')}-jobs)"
             )
-
             st.markdown(
                 f"🔹 [Glassdoor Jobs](https://www.glassdoor.com/Job/jobs.htm?sc.keyword={encoded_role})"
             )
 
         else:
-            st.warning("Please fill all required fields (Name, Skills, Target Role).")
+            st.warning("Please fill required fields (Name, Skills, Target Role).")
 # ==========================================================
 # ================= ADMIN PORTAL ===========================
 # ==========================================================
@@ -1585,6 +1602,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

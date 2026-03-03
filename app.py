@@ -255,7 +255,12 @@ if not api_key:
 client = Groq(api_key=api_key)
 MAIN_MODEL = "llama-3.1-8b-instant"
 MCQ_MODEL = "llama-3.3-70b-versatile"
+# ================= MODEL PRICING CONFIG =================
 
+MODEL_PRICING = {
+    "llama-3.1-8b-instant": 0.0002,     # cost per 1K tokens (example)
+    "llama-3.3-70b-versatile": 0.0006  # cost per 1K tokens (example)
+}
 # ================= SIDEBAR NAVIGATION =================
 
 st.sidebar.markdown("## 📌 Navigation")
@@ -298,7 +303,9 @@ def log_api_usage(event_type, status):
     with open("api_usage_log.txt", "a") as f:
         f.write(f"{timestamp} | {event_type} | {status}\n")
 
-def safe_llm_call(model, messages, temperature=0.3, retries=2):
+
+def safe_llm_call(model, messages, temperature=0.3, retries=2, user="System", feature="General"):
+
     for attempt in range(retries):
         try:
             response = client.chat.completions.create(
@@ -306,12 +313,51 @@ def safe_llm_call(model, messages, temperature=0.3, retries=2):
                 messages=messages,
                 temperature=temperature
             )
+
+            content = response.choices[0].message.content.strip()
+
+            # ================= TOKEN USAGE =================
+            prompt_tokens = 0
+            completion_tokens = 0
+            total_tokens = 0
+
+            try:
+                if hasattr(response, "usage") and response.usage:
+                    prompt_tokens = getattr(response.usage, "prompt_tokens", 0)
+                    completion_tokens = getattr(response.usage, "completion_tokens", 0)
+                    total_tokens = getattr(response.usage, "total_tokens", 0)
+            except:
+                pass
+
+            # ================= COST CALCULATION =================
+            price_per_1k = MODEL_PRICING.get(model, 0.0005)
+            estimated_cost = (total_tokens / 1000) * price_per_1k
+
+            # ================= SAVE TO GOOGLE SHEET =================
+            try:
+                save_api_usage([
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    user,
+                    feature,
+                    model,
+                    prompt_tokens,
+                    completion_tokens,
+                    total_tokens,
+                    round(estimated_cost, 6)
+                ])
+            except:
+                pass
+
             log_api_usage(model, "SUCCESS")
-            return response.choices[0].message.content.strip()
+
+            return content
+
         except Exception:
             time.sleep(2)
+
     log_api_usage(model, "FAILED")
     return None
+
 
 def safe_json_load(text):
     try:
@@ -319,6 +365,7 @@ def safe_json_load(text):
         return json.loads(text)
     except:
         return None
+
 
 def normalize_skills(skills_input):
     skills = [s.strip().lower() for s in skills_input.split(",") if s.strip()]
@@ -607,6 +654,7 @@ def save_feedback(data_row):
     except Exception as e:
         st.error(f"Google Sheet Error: {str(e)}")
 
+
 def save_mock_result(data_row):
     try:
         scopes = [
@@ -618,14 +666,41 @@ def save_mock_result(data_row):
             scopes=scopes
         )
         client_gs = gspread.authorize(creds)
+
         try:
             sheet = client_gs.open("FutureProof_Mock_Results").sheet1
         except:
             sheet = client_gs.create("FutureProof_Mock_Results").sheet1
+
         sheet.append_row(data_row)
+
     except Exception as e:
         st.error(f"Mock Sheet Error: {str(e)}")
 
+
+def save_api_usage(data_row):
+    try:
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+
+        creds = Credentials.from_service_account_info(
+            st.secrets["GOOGLE_SERVICE_ACCOUNT"],
+            scopes=scopes
+        )
+
+        client_gs = gspread.authorize(creds)
+
+        try:
+            sheet = client_gs.open("FutureProof_API_Usage").sheet1
+        except:
+            sheet = client_gs.create("FutureProof_API_Usage").sheet1
+
+        sheet.append_row(data_row)
+
+    except Exception as e:
+        print("API Usage Logging Error:", str(e))
 
 # ================= ADMIN ANALYTICS =================
 
@@ -1544,7 +1619,6 @@ elif page == "🔐 Admin Portal":
 
             col1, col2, col3 = st.columns(3)
 
-            # Define metric card INSIDE login block
             def metric_card(title, value):
                 st.markdown(f"""
                     <div style="
@@ -1599,6 +1673,63 @@ elif page == "🔐 Admin Portal":
             # ================= FULL DATASET =================
             st.markdown("## 📂 Full Dataset")
             st.dataframe(df)
+
+            # ======================================================
+            # ================= API COST ANALYTICS =================
+            # ======================================================
+
+            st.divider()
+
+            @st.cache_data(ttl=300)
+            def load_api_usage():
+                try:
+                    scopes = [
+                        "https://www.googleapis.com/auth/spreadsheets",
+                        "https://www.googleapis.com/auth/drive"
+                    ]
+
+                    creds = Credentials.from_service_account_info(
+                        st.secrets["GOOGLE_SERVICE_ACCOUNT"],
+                        scopes=scopes
+                    )
+
+                    client_gs = gspread.authorize(creds)
+                    sheet = client_gs.open("FutureProof_API_Usage").sheet1
+                    data = sheet.get_all_records()
+
+                    if not data:
+                        return pd.DataFrame()
+
+                    return pd.DataFrame(data)
+
+                except:
+                    return pd.DataFrame()
+
+            api_df = load_api_usage()
+
+            if not api_df.empty:
+
+                api_df.columns = api_df.columns.str.strip().str.lower()
+
+                if "estimated_cost" in api_df.columns:
+                    api_df["estimated_cost"] = pd.to_numeric(api_df["estimated_cost"], errors="coerce")
+                else:
+                    # fallback if no header row exists
+                    api_df["estimated_cost"] = pd.to_numeric(api_df.iloc[:, -1], errors="coerce")
+
+                st.markdown("## 💰 API Cost Analytics")
+
+                total_cost = api_df["estimated_cost"].sum()
+                st.metric("Total Platform API Cost", f"${total_cost:.4f}")
+
+                st.markdown("### 💵 Cost Per User")
+
+                if "user" in api_df.columns:
+                    user_cost = api_df.groupby("user")["estimated_cost"].sum().reset_index()
+                else:
+                    user_cost = api_df.groupby(api_df.columns[1])["estimated_cost"].sum().reset_index()
+
+                st.dataframe(user_cost)
 
         else:
             st.error("❌ Invalid Admin Credentials")

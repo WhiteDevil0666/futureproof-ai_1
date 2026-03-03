@@ -395,6 +395,20 @@ def safe_json_load(text):
     except Exception as e:
         print("JSON Parse Error:", e)
         return None
+
+# ================= SKILL NORMALIZER =================
+
+def normalize_skills(skills_input):
+    if not skills_input:
+        return []
+
+    skills = [
+        s.strip().lower()
+        for s in skills_input.split(",")
+        if s.strip()
+    ]
+
+    return list(set(skills))
 # ================= CACHED FUNCTIONS =================
 
 @st.cache_data(ttl=3600)
@@ -1781,6 +1795,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

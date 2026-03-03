@@ -924,18 +924,22 @@ def check_study_history(name, education, topic, level):
 
 if page == "🔎 Skill Intelligence":
 
+    # 🔥 SET FEATURE IMMEDIATELY (SAFE)
+    st.session_state.current_feature = "Skill_Intelligence"
+
     col1, col2 = st.columns(2)
+
     with col1:
         name = st.text_input("Name")
+
+        # 🔥 SET USER IMMEDIATELY AFTER INPUT
+        st.session_state.current_user = name.strip() if name else "Guest"
+
     with col2:
         education = st.selectbox(
             "Education Level",
             ["High School", "Diploma", "Graduation", "Post Graduation", "Other"]
         )
-
-    # 🔥 ADD THIS
-    st.session_state.current_user = name if name else "Guest"
-    st.session_state.current_feature = "Skill_Intelligence"
 
     skills_input = st.text_input("Current Skills (comma-separated)")
     hours = st.slider("Weekly Learning Hours", 1, 40, 10)
@@ -1795,6 +1799,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

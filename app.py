@@ -653,7 +653,87 @@ def load_mock_results():
         st.error(f"Analytics Load Error: {str(e)}")
         return pd.DataFrame()
 
+# ==========================================================
+# ================= AI MENTOR ENGINE =======================
+# ==========================================================
 
+def analyze_user_trend(name):
+    df = load_mock_results()
+
+    if df.empty:
+        return None
+
+    df.columns = df.columns.str.strip().str.lower()
+
+    if "candidate_name" not in df.columns or "percent" not in df.columns:
+        return None
+
+    user_df = df[df["candidate_name"].str.lower() == name.lower()]
+
+    if user_df.empty:
+        return None
+
+    user_df["percent"] = pd.to_numeric(user_df["percent"], errors="coerce")
+
+    scores = user_df["percent"].dropna().tolist()
+
+    if not scores:
+        return None
+
+    trend = "stable"
+
+    if len(scores) >= 2:
+        if scores[-1] > scores[-2]:
+            trend = "improving"
+        elif scores[-1] < scores[-2]:
+            trend = "declining"
+
+    return {
+        "latest": scores[-1],
+        "best": max(scores),
+        "average": sum(scores)/len(scores),
+        "total_tests": len(scores),
+        "trend": trend
+    }
+
+
+def recommend_difficulty(performance_data):
+
+    if not performance_data:
+        return "Beginner"
+
+    latest = performance_data["latest"]
+
+    if latest >= 85:
+        return "Expert"
+    elif latest >= 60:
+        return "Intermediate"
+    else:
+        return "Beginner"
+
+
+def generate_mentor_response(name, performance_data):
+
+    prompt = f"""
+You are an intelligent AI Career Mentor.
+
+User Name: {name}
+Performance Data: {performance_data}
+
+Your job:
+- Greet personally
+- Analyze progress trend
+- Encourage improvement
+- Suggest next step
+- Be motivating but professional
+- Keep under 8 lines
+"""
+
+    return safe_llm_call(
+        "llama-3.3-70b-versatile",
+        [{"role": "user", "content": prompt}],
+        temperature=0.5
+    )
 
 # ==========================================================
 # ================= SKILL INTELLIGENCE =====================
@@ -813,7 +893,34 @@ elif page == "🎓 Mock Assessment":
     st.header("🎓 Skill-Based Mock Assessment")
 
     candidate_name = st.text_input("Full Name")
+
+    # ================= AI MENTOR GREETING =================
+    if candidate_name:
+
+        performance_data = analyze_user_trend(candidate_name)
+
+        if performance_data:
+
+            mentor_message = generate_mentor_response(
+                candidate_name,
+                performance_data
+            )
+
+            st.success(mentor_message)
+
+            recommended_level = recommend_difficulty(performance_data)
+
+            st.info(
+                f"🎯 Recommended Difficulty Based On Performance: {recommended_level}"
+            )
+
+        else:
+            st.info(
+                f"👋 Welcome {candidate_name}! Let's start building your career momentum 🚀"
+            )
+
     candidate_email = st.text_input("Email")
+
     candidate_education = st.selectbox(
         "Education Level",
         ["High School", "Diploma", "Graduation", "Post Graduation", "Other"]
@@ -826,7 +933,6 @@ elif page == "🎓 Mock Assessment":
         ["Beginner", "Intermediate", "Expert"]
     )
 
-    # ✅ NEW: Test Mode Selector
     test_mode = st.selectbox(
         "Select Test Mode",
         ["Theoretical Knowledge", "Logical Thinking", "Coding Based"]
@@ -853,7 +959,6 @@ elif page == "🎓 Mock Assessment":
 
         else:
             st.error("Failed to generate test questions. Try again.")
-
     # ================= DISPLAY QUESTIONS =================
     if st.session_state.get("mock_questions"):
 
@@ -1010,6 +1115,24 @@ elif page == "📚 Guided Study Chat":
 
     # ================= USER DETAILS =================
     candidate_name = st.text_input("Full Name")
+
+    # ================= AI MENTOR GREETING =================
+    if candidate_name:
+
+        performance_data = analyze_user_trend(candidate_name)
+
+        if performance_data:
+
+            mentor_message = generate_mentor_response(
+                candidate_name,
+                performance_data
+            )
+
+            st.success(mentor_message)
+
+        else:
+            st.info(f"👋 Hi {candidate_name}! Let's start building your expertise 🚀")
+
     education = st.selectbox(
         "Education Level",
         ["High School", "Diploma", "Graduation", "Post Graduation", "Other"]
@@ -1037,12 +1160,16 @@ elif page == "📚 Guided Study Chat":
             st.session_state.study_chat_started = True
 
             st.session_state.study_context = f"""
-You are an expert tutor.
+You are an expert tutor and AI career mentor.
 
 Teach Topic: {topic}
 Difficulty Level: {level}
 Student Education: {education}
 Student Goal: {learning_goal}
+
+If user has past performance:
+- Encourage improvement
+- Align explanations with career growth
 
 RULES:
 - Stay strictly within the selected topic.
@@ -1085,7 +1212,6 @@ RULES:
                 {"role": "assistant", "content": response}
             )
 
-        # Display chat history
         for msg in st.session_state.study_messages:
             with st.chat_message(msg["role"]):
                 st.write(msg["content"])
@@ -1204,6 +1330,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

@@ -275,6 +275,7 @@ page = st.sidebar.radio(
         "🔐 Admin Portal"
     ]
 )
+
 # Reset mock session when switching pages
 if page != "🎓 Mock Assessment":
     if "mock_questions" in st.session_state:
@@ -285,6 +286,7 @@ if page != "🎓 Mock Assessment":
         del st.session_state.time_limit
     if "exam_submitted" in st.session_state:
         del st.session_state.exam_submitted
+
 if page != "📚 Guided Study Chat":
     if "study_chat_started" in st.session_state:
         del st.session_state.study_chat_started
@@ -292,10 +294,21 @@ if page != "📚 Guided Study Chat":
         del st.session_state.study_messages
     if "study_context" in st.session_state:
         del st.session_state.study_context
+
 if page != "💼 AI Job Finder (Premium)":
     if "job_analysis_result" in st.session_state:
         del st.session_state.job_analysis_result
 
+
+# =====================================================
+# ✅ ADD THIS BLOCK RIGHT HERE (FIRST CHANGE)
+# =====================================================
+
+if "current_user" not in st.session_state:
+    st.session_state.current_user = "System"
+
+if "current_feature" not in st.session_state:
+    st.session_state.current_feature = "General"
 # ================= UTILITIES =================
 
 def log_api_usage(event_type, status):
@@ -304,7 +317,11 @@ def log_api_usage(event_type, status):
         f.write(f"{timestamp} | {event_type} | {status}\n")
 
 
-def safe_llm_call(model, messages, temperature=0.3, retries=2, user="System", feature="General"):
+def safe_llm_call(model, messages, temperature=0.3, retries=2):
+
+    # 🔥 Automatically read current tracking info
+    user = st.session_state.get("current_user", "System")
+    feature = st.session_state.get("current_feature", "General")
 
     for attempt in range(retries):
         try:
@@ -321,32 +338,26 @@ def safe_llm_call(model, messages, temperature=0.3, retries=2, user="System", fe
             completion_tokens = 0
             total_tokens = 0
 
-            try:
-                if hasattr(response, "usage") and response.usage:
-                    prompt_tokens = getattr(response.usage, "prompt_tokens", 0)
-                    completion_tokens = getattr(response.usage, "completion_tokens", 0)
-                    total_tokens = getattr(response.usage, "total_tokens", 0)
-            except:
-                pass
+            if hasattr(response, "usage") and response.usage:
+                prompt_tokens = getattr(response.usage, "prompt_tokens", 0)
+                completion_tokens = getattr(response.usage, "completion_tokens", 0)
+                total_tokens = getattr(response.usage, "total_tokens", 0)
 
             # ================= COST CALCULATION =================
             price_per_1k = MODEL_PRICING.get(model, 0.0005)
             estimated_cost = (total_tokens / 1000) * price_per_1k
 
             # ================= SAVE TO GOOGLE SHEET =================
-            try:
-                save_api_usage([
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    user,
-                    feature,
-                    model,
-                    prompt_tokens,
-                    completion_tokens,
-                    total_tokens,
-                    round(estimated_cost, 6)
-                ])
-            except:
-                pass
+            save_api_usage([
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                user,
+                feature,
+                model,
+                prompt_tokens,
+                completion_tokens,
+                total_tokens,
+                round(estimated_cost, 6)
+            ])
 
             log_api_usage(model, "SUCCESS")
 
@@ -357,15 +368,6 @@ def safe_llm_call(model, messages, temperature=0.3, retries=2, user="System", fe
 
     log_api_usage(model, "FAILED")
     return None
-
-
-def safe_json_load(text):
-    try:
-        text = text.replace("```json", "").replace("```", "").strip()
-        return json.loads(text)
-    except:
-        return None
-
 
 def normalize_skills(skills_input):
     skills = [s.strip().lower() for s in skills_input.split(",") if s.strip()]
@@ -895,6 +897,10 @@ if page == "🔎 Skill Intelligence":
             ["High School", "Diploma", "Graduation", "Post Graduation", "Other"]
         )
 
+    # 🔥 ADD THIS
+    st.session_state.current_user = name if name else "Guest"
+    st.session_state.current_feature = "Skill_Intelligence"
+
     skills_input = st.text_input("Current Skills (comma-separated)")
     hours = st.slider("Weekly Learning Hours", 1, 40, 10)
 
@@ -1039,6 +1045,9 @@ elif page == "🎓 Mock Assessment":
 
     candidate_name = st.text_input("Full Name")
 
+    # 🔥 ADD THIS
+    st.session_state.current_user = candidate_name if candidate_name else "Guest"
+    st.session_state.current_feature = "Mock_Assessment"
     # ================= AI MENTOR GREETING =================
     if candidate_name:
 
@@ -1261,6 +1270,14 @@ elif page == "📚 Guided Study Chat":
     # ================= USER DETAILS =================
     candidate_name = st.text_input("Full Name")
 
+    # 🔥 Only update tracking when name is entered
+    if candidate_name:
+        st.session_state.current_user = candidate_name
+    else:
+        st.session_state.current_user = "Guest"
+
+    st.session_state.current_feature = "Guided_Study_Chat"
+
     # ================= AI MENTOR GREETING =================
     if candidate_name:
 
@@ -1455,6 +1472,15 @@ elif page == "💼 AI Job Finder (Premium)":
     st.success("🎯 AI-Powered Smart Job Matching Activated")
 
     name = st.text_input("Full Name")
+
+    # 🔥 Safe user tracking
+    if name:
+        st.session_state.current_user = name
+    else:
+        st.session_state.current_user = "Guest"
+
+    st.session_state.current_feature = "Job_Finder"
+
     age = st.number_input("Age", min_value=16, max_value=65, step=1)
 
     education = st.selectbox(
@@ -1733,6 +1759,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

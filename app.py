@@ -736,6 +736,70 @@ Your job:
     )
 
 # ==========================================================
+# ================= STUDY MEMORY ENGINE ====================
+# ==========================================================
+
+def save_study_history(data_row):
+    try:
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        creds = Credentials.from_service_account_info(
+            st.secrets["GOOGLE_SERVICE_ACCOUNT"],
+            scopes=scopes
+        )
+        client_gs = gspread.authorize(creds)
+
+        try:
+            sheet = client_gs.open("FutureProof_Study_History").sheet1
+        except:
+            sheet = client_gs.create("FutureProof_Study_History").sheet1
+
+        sheet.append_row(data_row)
+
+    except Exception as e:
+        st.error(f"Study History Error: {str(e)}")
+
+
+def check_study_history(name, education, topic, level):
+    try:
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+
+        creds = Credentials.from_service_account_info(
+            st.secrets["GOOGLE_SERVICE_ACCOUNT"],
+            scopes=scopes
+        )
+
+        client_gs = gspread.authorize(creds)
+
+        sheet = client_gs.open("FutureProof_Study_History").sheet1
+        data = sheet.get_all_records()
+
+        if not data:
+            return False
+
+        df = pd.DataFrame(data)
+        df.columns = df.columns.str.lower()
+
+        match = df[
+            (df["name"].str.lower() == name.lower()) &
+            (df["education"].str.lower() == education.lower()) &
+            (df["topic"].str.lower() == topic.lower()) &
+            (df["level"].str.lower() == level.lower())
+        ]
+
+        return not match.empty
+
+    except:
+        return False
+
+
+
+# ==========================================================
 # ================= SKILL INTELLIGENCE =====================
 # ==========================================================
 
@@ -1153,12 +1217,61 @@ elif page == "📚 Guided Study Chat":
     if "study_messages" not in st.session_state:
         st.session_state.study_messages = []
 
+    # ================= START LEARNING BUTTON =================
     if st.button("Start Learning"):
 
         if topic and candidate_name:
 
-            st.session_state.study_chat_started = True
+            # 🔥 NEW: Check Study History
+            already_studied = check_study_history(
+                candidate_name,
+                education,
+                topic,
+                level
+            )
 
+            if already_studied:
+
+                st.warning(
+                    f"You have already studied **{topic} ({level})**."
+                )
+
+                action = st.selectbox(
+                    "What would you like to do?",
+                    ["Revise", "Study in Detailed Mode", "Test Yourself"]
+                )
+
+                if action == "Test Yourself":
+
+                    questions = generate_mcqs(
+                        [topic],
+                        level,
+                        "Theoretical Knowledge"
+                    )
+
+                    if questions:
+                        st.session_state.quick_test = questions[:5]
+
+                elif action == "Revise":
+                    st.session_state.study_chat_started = True
+
+                elif action == "Study in Detailed Mode":
+                    level = "Expert"
+                    st.session_state.study_chat_started = True
+
+            else:
+                # First time studying
+                save_study_history([
+                    candidate_name,
+                    education,
+                    topic,
+                    level,
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                ])
+
+                st.session_state.study_chat_started = True
+
+            # Study context setup (kept from your original code)
             st.session_state.study_context = f"""
 You are an expert tutor and AI career mentor.
 
@@ -1215,6 +1328,39 @@ RULES:
         for msg in st.session_state.study_messages:
             with st.chat_message(msg["role"]):
                 st.write(msg["content"])
+
+    # ================= QUICK SELF TEST =================
+    if "quick_test" in st.session_state:
+
+        st.markdown("### 📝 Quick Self-Test")
+
+        score = 0
+
+        for i, q in enumerate(st.session_state.quick_test):
+
+            selected = st.radio(
+                q["question"],
+                q["options"],
+                key=f"quick_{i}"
+            )
+
+            if selected == q["options"][q["answer"]]:
+                score += 1
+
+        if st.button("Submit Quick Test"):
+
+            percent = (score / len(st.session_state.quick_test)) * 100
+
+            if percent >= 80:
+                st.success(
+                    "🔥 Excellent! You are ready for higher level or next topic!"
+                )
+            else:
+                st.info(
+                    "You may revise this level once more before upgrading."
+                )
+
+            del st.session_state.quick_test
 # ==========================================================
 # ================= ADMIN PORTAL ===========================
 # ==========================================================
@@ -1330,6 +1476,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

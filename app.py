@@ -1866,16 +1866,16 @@ elif page == "🔐 Admin Portal":
                 except:
                     return pd.DataFrame()
 
-            api_df = load_api_usage()
+                       api_df = load_api_usage()
 
             if not api_df.empty:
 
                 api_df.columns = api_df.columns.str.strip().str.lower()
 
+                # ================= CLEAN COST COLUMN =================
                 if "estimated_cost" in api_df.columns:
                     api_df["estimated_cost"] = pd.to_numeric(api_df["estimated_cost"], errors="coerce")
                 else:
-                    # fallback if no header row exists
                     api_df["estimated_cost"] = pd.to_numeric(api_df.iloc[:, -1], errors="coerce")
 
                 st.markdown("## 💰 API Cost Analytics")
@@ -1883,6 +1883,7 @@ elif page == "🔐 Admin Portal":
                 total_cost = api_df["estimated_cost"].sum()
                 st.metric("Total Platform API Cost", f"${total_cost:.4f}")
 
+                # ================= COST PER USER =================
                 st.markdown("### 💵 Cost Per User")
 
                 if "user" in api_df.columns:
@@ -1892,9 +1893,66 @@ elif page == "🔐 Admin Portal":
 
                 st.dataframe(user_cost)
 
-        else:
-            st.error("❌ Invalid Admin Credentials")
+                st.divider()
 
+                # ======================================================
+                # ================= AI USAGE BY FEATURE =================
+                # ======================================================
+
+                if "feature" in api_df.columns:
+
+                    st.markdown("## 📊 AI Usage by Feature")
+
+                    feature_usage = api_df["feature"].value_counts()
+
+                    st.bar_chart(feature_usage)
+
+                st.divider()
+
+                # ======================================================
+                # ================= COST BY MODEL =======================
+                # ======================================================
+
+                if "model" in api_df.columns:
+
+                    st.markdown("## 💰 Cost by AI Model")
+
+                    model_cost = api_df.groupby("model")["estimated_cost"].sum()
+
+                    st.bar_chart(model_cost)
+
+                st.divider()
+
+                # ======================================================
+                # ================= MOST ACTIVE USERS ===================
+                # ======================================================
+
+                if "user" in api_df.columns:
+
+                    st.markdown("## 🔥 Most Active Users")
+
+                    top_users = api_df["user"].value_counts().head(10)
+
+                    st.bar_chart(top_users)
+
+                st.divider()
+
+                # ======================================================
+                # ================= TOKEN USAGE TREND ===================
+                # ======================================================
+
+                if "total_tokens" in api_df.columns:
+
+                    st.markdown("## 📈 Token Usage Trend")
+
+                    api_df["total_tokens"] = pd.to_numeric(api_df["total_tokens"], errors="coerce")
+
+                    token_usage = api_df["total_tokens"]
+
+                    st.line_chart(token_usage)
+
+            else:
+                st.info("No API usage data available yet.")
 
 
 

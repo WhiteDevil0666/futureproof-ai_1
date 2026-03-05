@@ -1878,13 +1878,13 @@ elif page == "🔐 Admin Portal":
 
                 from datetime import date
 
-                today = date.today().strftime("%Y-%m-%d")
+                today = pd.Timestamp.today().date()
 
                 if "timestamp" in api_df.columns:
 
-                    api_df["timestamp"] = api_df["timestamp"].astype(str)
+                    api_df["timestamp"] = pd.to_datetime(api_df["timestamp"], errors="coerce")
 
-                    today_df = api_df[api_df["timestamp"].str.contains(today)]
+                    today_df = api_df[api_df["timestamp"].dt.date == today]
 
                     requests_today = len(today_df)
 
@@ -1983,6 +1983,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

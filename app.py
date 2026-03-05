@@ -1890,8 +1890,13 @@ elif page == "🔐 Admin Portal":
                 if "timestamp" in api_df.columns:
 
                     api_df["timestamp"] = pd.to_datetime(api_df["timestamp"], errors="coerce")
+                    today_start = pd.Timestamp.now().normalize()
+                    today_end = today_start + pd.Timedelta(days=1)
 
-                    today_df = api_df[api_df["timestamp"].dt.date == today]
+                    today_df = api_df[
+                        (api_df["timestamp"] >= today_start) &
+                        (api_df["timestamp"] < today_end)
+                    ]
 
                     requests_today = len(today_df)
 
@@ -1990,6 +1995,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

@@ -1872,6 +1872,46 @@ elif page == "🔐 Admin Portal":
 
                 api_df.columns = api_df.columns.str.strip().str.lower()
 
+                # ======================================================
+                # ================= DAILY PLATFORM HEALTH ==============
+                # ======================================================
+
+                from datetime import date
+
+                today = date.today().strftime("%Y-%m-%d")
+
+                if "timestamp" in api_df.columns:
+
+                    api_df["timestamp"] = api_df["timestamp"].astype(str)
+
+                    today_df = api_df[api_df["timestamp"].str.contains(today)]
+
+                    requests_today = len(today_df)
+
+                    active_users = today_df["user"].nunique() if "user" in today_df.columns else 0
+
+                    today_cost = today_df["estimated_cost"].sum() if "estimated_cost" in today_df.columns else 0
+
+                    avg_tokens = today_df["total_tokens"].mean() if "total_tokens" in today_df.columns else 0
+
+                    st.markdown("## 🧠 Platform Health (Today)")
+
+                    c1, c2, c3, c4 = st.columns(4)
+
+                    with c1:
+                        st.metric("📊 Requests Today", requests_today)
+
+                    with c2:
+                        st.metric("⚡ Avg Tokens / Request", int(avg_tokens) if avg_tokens else 0)
+
+                    with c3:
+                        st.metric("💰 Today's AI Cost", f"${today_cost:.4f}")
+
+                    with c4:
+                        st.metric("👥 Active Users Today", active_users)
+
+                    st.divider()
+
                 if "estimated_cost" in api_df.columns:
                     api_df["estimated_cost"] = pd.to_numeric(api_df["estimated_cost"], errors="coerce")
                 else:
@@ -1943,6 +1983,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

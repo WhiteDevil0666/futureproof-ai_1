@@ -1872,6 +1872,13 @@ elif page == "🔐 Admin Portal":
 
                 api_df.columns = api_df.columns.str.strip().str.lower()
 
+                # Fix numeric columns BEFORE analytics
+                if "estimated_cost" in api_df.columns:
+                api_df["estimated_cost"] = pd.to_numeric(api_df["estimated_cost"], errors="coerce")
+
+                if "total_tokens" in api_df.columns:
+                api_df["total_tokens"] = pd.to_numeric(api_df["total_tokens"], errors="coerce")
+
                 # ======================================================
                 # ================= DAILY PLATFORM HEALTH ==============
                 # ======================================================
@@ -1983,6 +1990,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

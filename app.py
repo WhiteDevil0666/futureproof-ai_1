@@ -258,9 +258,15 @@ MCQ_MODEL = "llama-3.3-70b-versatile"
 # ================= MODEL PRICING CONFIG =================
 
 MODEL_PRICING = {
-    "llama-3.1-8b-instant": 0.0002,     # cost per 1K tokens (example)
-    "llama-3.3-70b-versatile": 0.0006  # cost per 1K tokens (example)
+    "llama-3.1-8b-instant": 0.0002,
+    "llama-3.3-70b-versatile": 0.0006
 }
+
+# ================= REQUEST CONTROL =================
+
+MAX_REQUESTS_PER_SESSION = 60
+REQUEST_COOLDOWN = 3
+
 # ================= SIDEBAR NAVIGATION =================
 
 st.sidebar.markdown("## 📌 Navigation")
@@ -271,7 +277,7 @@ page = st.sidebar.radio(
         "🔎 Skill Intelligence",
         "🎓 Mock Assessment",
         "📚 Guided Study Chat",
-        "💼 AI Job Finder (Premium)",  
+        "💼 AI Job Finder (Premium)",
         "🔐 Admin Portal"
     ]
 )
@@ -280,7 +286,6 @@ page = st.sidebar.radio(
 
 remaining = MAX_REQUESTS_PER_SESSION - st.session_state.get("request_count", 0)
 st.sidebar.caption(f"🤖 AI Requests Remaining: {remaining}")
-
 
 # Reset mock session when switching pages
 if page != "🎓 Mock Assessment":
@@ -1837,6 +1842,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

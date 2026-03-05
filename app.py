@@ -276,6 +276,12 @@ page = st.sidebar.radio(
     ]
 )
 
+# ================= AI REQUEST USAGE =================
+
+if "request_count" in st.session_state:
+    remaining = MAX_REQUESTS_PER_SESSION - st.session_state.request_count
+    st.sidebar.caption(f"🤖 AI Requests Remaining: {remaining}")
+
 # Reset mock session when switching pages
 if page != "🎓 Mock Assessment":
     if "mock_questions" in st.session_state:
@@ -309,6 +315,37 @@ if "current_user" not in st.session_state:
 
 if "current_feature" not in st.session_state:
     st.session_state.current_feature = "General"
+
+
+# ================= REQUEST CONTROL =================
+
+MAX_REQUESTS_PER_SESSION = 25
+REQUEST_COOLDOWN = 3  # seconds
+
+
+def check_request_limit():
+
+    now = time.time()
+
+    if "request_count" not in st.session_state:
+        st.session_state.request_count = 0
+
+    if "last_request_time" not in st.session_state:
+        st.session_state.last_request_time = 0
+
+    # Cooldown protection
+    if now - st.session_state.last_request_time < REQUEST_COOLDOWN:
+        st.warning("⏳ Please wait a few seconds before sending another request.")
+        st.stop()
+
+    # Session limit protection
+    if st.session_state.request_count >= MAX_REQUESTS_PER_SESSION:
+        st.error("⚠️ Session request limit reached. Please refresh the page.")
+        st.stop()
+
+    st.session_state.last_request_time = now
+    st.session_state.request_count += 1
+
 # ================= UTILITIES =================
 
 def log_api_usage(event_type, status):
@@ -318,6 +355,9 @@ def log_api_usage(event_type, status):
 
 
 def safe_llm_call(model, messages, temperature=0.3, retries=2):
+
+    # 🔐 Request protection
+    check_request_limit()
 
     # 🔥 Read current tracking info safely
     user = st.session_state.get("current_user", "System")
@@ -1797,6 +1837,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

@@ -278,9 +278,9 @@ page = st.sidebar.radio(
 
 # ================= AI REQUEST USAGE =================
 
-if "request_count" in st.session_state:
-    remaining = MAX_REQUESTS_PER_SESSION - st.session_state.request_count
-    st.sidebar.caption(f"🤖 AI Requests Remaining: {remaining}")
+remaining = MAX_REQUESTS_PER_SESSION - st.session_state.get("request_count", 0)
+st.sidebar.caption(f"🤖 AI Requests Remaining: {remaining}")
+
 
 # Reset mock session when switching pages
 if page != "🎓 Mock Assessment":
@@ -1837,6 +1837,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

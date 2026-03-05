@@ -1863,16 +1863,15 @@ elif page == "🔐 Admin Portal":
 
                     return pd.DataFrame(data)
 
-                except:
+                                except:
                     return pd.DataFrame()
 
-                       api_df = load_api_usage()
+            api_df = load_api_usage()
 
             if not api_df.empty:
 
                 api_df.columns = api_df.columns.str.strip().str.lower()
 
-                # ================= CLEAN COST COLUMN =================
                 if "estimated_cost" in api_df.columns:
                     api_df["estimated_cost"] = pd.to_numeric(api_df["estimated_cost"], errors="coerce")
                 else:
@@ -1882,7 +1881,6 @@ elif page == "🔐 Admin Portal":
 
                 total_cost = api_df["estimated_cost"].sum()
                 st.metric("Total Platform API Cost", f"${total_cost:.4f}")
-
                 # ================= COST PER USER =================
                 st.markdown("### 💵 Cost Per User")
 
@@ -1953,6 +1951,7 @@ elif page == "🔐 Admin Portal":
 
             else:
                 st.info("No API usage data available yet.")
+
 
 
 

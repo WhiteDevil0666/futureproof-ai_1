@@ -411,7 +411,7 @@ def normalize_skills(skills_input):
     return list(set(skills))
 # ================= CACHED FUNCTIONS =================
 
-# @st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600)
 def detect_domain_cached(skills_tuple):
     prompt = f"""
 You are a career classification engine.
@@ -428,7 +428,7 @@ Return ONLY the domain name.
         {"role": "user", "content": prompt}
     ]) or "General Domain"
 
-# @st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600)
 def infer_role_cached(skills_tuple, domain):
     prompt = f"""
 Skills: {", ".join(skills_tuple)}
@@ -1797,6 +1797,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

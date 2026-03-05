@@ -324,8 +324,8 @@ if "current_feature" not in st.session_state:
 
 # ================= REQUEST CONTROL =================
 
-MAX_REQUESTS_PER_SESSION = 25
-REQUEST_COOLDOWN = 3  # seconds
+# MAX_REQUESTS_PER_SESSION = 25
+# REQUEST_COOLDOWN = 3  # seconds
 
 
 def check_request_limit():
@@ -360,9 +360,6 @@ def log_api_usage(event_type, status):
 
 
 def safe_llm_call(model, messages, temperature=0.3, retries=2):
-
-    # 🔐 Request protection
-    check_request_limit()
 
     # 🔥 Read current tracking info safely
     user = st.session_state.get("current_user", "System")
@@ -1897,6 +1894,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

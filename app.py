@@ -1037,86 +1037,79 @@ if page == "🔎 Skill Intelligence":
             "🌍 Market Outlook"
         ])
 
-# ======================================================
-# ================= ROLE ALIGNMENT =====================
-# ======================================================
+        # ======================================================
+        # ================= ROLE ALIGNMENT =====================
+        # ======================================================
+        with tab1:
 
-with tab1:
+            st.header(role)
+            st.markdown(f"🧭 Detected Domain: `{domain}`")
 
-    st.header(role)
-    st.markdown(f"🧭 Detected Domain: `{domain}`")
+            # ================= SAFE CONFIDENCE HANDLING =================
+            confidence_value = 70
+            risk_value = "Medium"
+            summary_value = "Moderate job outlook."
 
-    # ================= SAFE CONFIDENCE HANDLING =================
-    confidence_value = 70
-    risk_value = "Medium"
-    summary_value = "Moderate job outlook."
+            if isinstance(confidence, dict):
+                confidence_value = confidence.get("confidence", 70)
+                risk_value = confidence.get("risk", "Medium")
+                summary_value = confidence.get("summary", "Moderate job outlook.")
 
-    if isinstance(confidence, dict):
-        confidence_value = confidence.get("confidence", 70)
-        risk_value = confidence.get("risk", "Medium")
-        summary_value = confidence.get("summary", "Moderate job outlook.")
+            elif isinstance(confidence, str):
 
-    elif isinstance(confidence, str):
+                conf_match = re.search(r"(\d+)%", confidence)
+                risk_match = re.search(r"Risk:\s*(Low|Medium|High)", confidence)
+                summary_match = re.search(r"Summary:\s*(.*)", confidence)
 
-        conf_match = re.search(r"(\d+)%", confidence)
-        risk_match = re.search(r"Risk:\s*(Low|Medium|High)", confidence)
-        summary_match = re.search(r"Summary:\s*(.*)", confidence)
+                if conf_match:
+                    confidence_value = int(conf_match.group(1))
 
-        if conf_match:
-            confidence_value = int(conf_match.group(1))
+                if risk_match:
+                    risk_value = risk_match.group(1)
 
-        if risk_match:
-            risk_value = risk_match.group(1)
+                if summary_match:
+                    summary_value = summary_match.group(1)
 
-        if summary_match:
-            summary_value = summary_match.group(1)
+            readiness = calculate_career_readiness(
+                skills,
+                growth,
+                confidence_value
+            )
 
-    # ================= CAREER READINESS CALCULATION =================
-    readiness = calculate_career_readiness(
-        skills,
-        growth,
-        confidence_value
-    )
+            colA, colB = st.columns(2)
 
-    # ================= METRICS =================
-    colA, colB = st.columns(2)
+            with colA:
+                st.metric("Hiring Confidence", f"{confidence_value}%")
 
-    with colA:
-        st.metric("Hiring Confidence", f"{confidence_value}%")
+            with colB:
+                st.metric("Market Risk", risk_value)
 
-    with colB:
-        st.metric("Market Risk", risk_value)
+            st.markdown("### 📌 Career Outlook")
+            st.markdown(summary_value)
 
-    st.markdown("### 📌 Career Outlook")
-    st.markdown(summary_value)
+            st.markdown("### 🚀 Career Readiness Score")
 
-    # ================= CAREER READINESS SCORE =================
-    st.markdown("### 🚀 Career Readiness Score")
+            st.metric(
+                "Overall Career Readiness",
+                f"{readiness['total']}%"
+            )
 
-    st.metric(
-        "Overall Career Readiness",
-        f"{readiness['total']}%"
-    )
+            colR1, colR2, colR3 = st.columns(3)
 
-    # ================= SCORE BREAKDOWN =================
-    colR1, colR2, colR3 = st.columns(3)
+            with colR1:
+                st.metric("Skill Strength", f"{readiness['skill_score']}/40")
 
-    with colR1:
-        st.metric("Skill Strength", f"{readiness['skill_score']}/40")
+            with colR2:
+                st.metric("Growth Potential", f"{readiness['growth_score']}/30")
 
-    with colR2:
-        st.metric("Growth Potential", f"{readiness['growth_score']}/30")
+            with colR3:
+                st.metric("Market Alignment", f"{readiness['market_score']}/30")
 
-    with colR3:
-        st.metric("Market Alignment", f"{readiness['market_score']}/30")
+            st.markdown("### 📌 Score Explanation")
 
-    # ================= SCORE EXPLANATION =================
-    st.markdown("### 📌 Score Explanation")
-
-    st.info(f"**Skill Strength:** {readiness['skill_msg']}")
-    st.info(f"**Growth Potential:** {readiness['growth_msg']}")
-    st.info(f"**Market Alignment:** {readiness['market_msg']}")        
-    
+            st.info(f"**Skill Strength:** {readiness['skill_msg']}")
+            st.info(f"**Growth Potential:** {readiness['growth_msg']}")
+            st.info(f"**Market Alignment:** {readiness['market_msg']}")    
     # ======================================================
     # ================= COMPETITIVENESS PLAN ===============
     # ======================================================
@@ -1904,6 +1897,7 @@ elif page == "🔐 Admin Portal":
 
         else:
             st.error("❌ Invalid Admin Credentials")
+
 
 
 

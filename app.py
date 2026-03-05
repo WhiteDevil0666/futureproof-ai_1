@@ -1863,7 +1863,7 @@ elif page == "🔐 Admin Portal":
 
                     return pd.DataFrame(data)
 
-                                except:
+                except:
                     return pd.DataFrame()
 
             api_df = load_api_usage()
@@ -1881,6 +1881,7 @@ elif page == "🔐 Admin Portal":
 
                 total_cost = api_df["estimated_cost"].sum()
                 st.metric("Total Platform API Cost", f"${total_cost:.4f}")
+
                 # ================= COST PER USER =================
                 st.markdown("### 💵 Cost Per User")
 
@@ -1893,10 +1894,7 @@ elif page == "🔐 Admin Portal":
 
                 st.divider()
 
-                # ======================================================
                 # ================= AI USAGE BY FEATURE =================
-                # ======================================================
-
                 if "feature" in api_df.columns:
 
                     st.markdown("## 📊 AI Usage by Feature")
@@ -1907,10 +1905,7 @@ elif page == "🔐 Admin Portal":
 
                 st.divider()
 
-                # ======================================================
-                # ================= COST BY MODEL =======================
-                # ======================================================
-
+                # ================= COST BY MODEL =================
                 if "model" in api_df.columns:
 
                     st.markdown("## 💰 Cost by AI Model")
@@ -1921,10 +1916,7 @@ elif page == "🔐 Admin Portal":
 
                 st.divider()
 
-                # ======================================================
-                # ================= MOST ACTIVE USERS ===================
-                # ======================================================
-
+                # ================= MOST ACTIVE USERS =================
                 if "user" in api_df.columns:
 
                     st.markdown("## 🔥 Most Active Users")
@@ -1935,10 +1927,7 @@ elif page == "🔐 Admin Portal":
 
                 st.divider()
 
-                # ======================================================
-                # ================= TOKEN USAGE TREND ===================
-                # ======================================================
-
+                # ================= TOKEN USAGE TREND =================
                 if "total_tokens" in api_df.columns:
 
                     st.markdown("## 📈 Token Usage Trend")
@@ -1951,6 +1940,9 @@ elif page == "🔐 Admin Portal":
 
             else:
                 st.info("No API usage data available yet.")
+
+        else:
+            st.error("❌ Invalid Admin Credentials")
 
 
 

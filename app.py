@@ -1071,9 +1071,9 @@ if page == "🔎 Skill Intelligence":
         st.session_state.current_user = name.strip() if name else "Guest"
 
     with col2:
-        education = st.selectbox(
+        education = st.text_input(
             "Education Level",
-            ["High School", "Diploma", "Graduation", "Post Graduation", "Other"]
+            placeholder="e.g. 10th Grade, 12th Standard, B.Tech, MBA, Bootcamp Graduate..."
         )
 
     skills_input = st.text_input("Current Skills (comma-separated)")
@@ -1685,9 +1685,9 @@ elif page == "📚 Guided Study Chat":
         else:
             st.info(f"👋 Hi {candidate_name}! Let's start building your expertise 🚀")
 
-    education = st.selectbox(
+    education = st.text_input(
         "Education Level",
-        ["High School", "Diploma", "Graduation", "Post Graduation", "Other"]
+        placeholder="e.g. 10th Grade, B.Tech, Self-taught, MBA, Bootcamp Graduate..."
     )
 
     topic = st.text_input("Topic You Want To Study")
@@ -1702,7 +1702,7 @@ elif page == "📚 Guided Study Chat":
 
     if st.button("Start Learning"):
 
-        if topic and candidate_name:
+        if topic and candidate_name and education:
 
             already_studied = check_study_history(candidate_name, education, topic, level)
 
@@ -1742,24 +1742,54 @@ You are an expert tutor and AI career mentor.
 
 Teach Topic: {topic}
 Difficulty Level: {level}
-Student Education: {education}
+Student Education Background: {education}
 Student Goal: {learning_goal}
 
-If user has past performance:
-- Encourage improvement
-- Align explanations with career growth
+CRITICAL TEACHING RULE — ADAPT TO EDUCATION LEVEL:
+Based on the student's education background "{education}", adjust everything:
 
-RULES:
-- Stay strictly within the selected topic.
-- Adjust explanation depth based on difficulty.
-- Provide structured explanations.
-- Use examples when helpful.
-- If question is outside topic, politely redirect.
+- If the education is basic (e.g. 10th grade, high school, self-taught beginner):
+  * Use very simple everyday language
+  * Avoid technical jargon — if you must use a term, define it immediately
+  * Use real-world analogies (e.g. explain a database like an Excel sheet)
+  * Break every concept into the smallest possible steps
+  * Use lots of examples before introducing theory
+
+- If the education is intermediate (e.g. Diploma, Undergraduate, Bootcamp):
+  * Assume basic programming or domain knowledge
+  * Mix theory with practical examples
+  * Introduce standard terminology but briefly explain each term
+  * You can reference related concepts they likely know
+
+- If the education is advanced (e.g. Post Graduation, MBA, Masters, PhD, Professional):
+  * Use precise technical language freely
+  * Skip basics unless asked
+  * Focus on depth, edge cases, and nuance
+  * You can reference research, industry standards, and advanced patterns
+
+ADDITIONAL RULES:
+- Stay strictly within the selected topic: {topic}
+- Further adjust explanation depth based on difficulty level: {level}
+- If difficulty is Beginner but education is advanced, keep language expert but pace slowly
+- If difficulty is Expert but education is basic, explain advanced ideas using simple analogies
+- Provide structured explanations with clear sections
+- Use code examples when relevant to the topic
+- If a question is outside the topic, politely redirect back to {topic}
+- Always check: "Would a student with {education} background understand this?"
 """
+
+
+
+            
             st.session_state.study_messages = []
 
         else:
-            st.warning("Please fill required details.")
+            if not candidate_name:
+                st.warning("⚠️ Please enter your name.")
+            elif not education:
+                st.warning("⚠️ Please enter your education level (e.g. 10th Grade, B.Tech, Self-taught).")
+            elif not topic:
+                st.warning("⚠️ Please enter the topic you want to study.")
 
     if st.session_state.study_chat_started:
 
@@ -1827,9 +1857,9 @@ elif page == "💼 AI Job Finder (Premium)":
 
     age = st.number_input("Age", min_value=16, max_value=65, step=1)
 
-    education = st.selectbox(
+    education =  st.text_input(
         "Education Level",
-        ["High School", "Diploma", "Graduation", "Post Graduation", "Other"]
+        placeholder="e.g. 10th Grade, 12th Standard, B.Tech, MBA, Bootcamp Graduate..."
     )
 
     skills_input = st.text_input("Skills (comma-separated)")

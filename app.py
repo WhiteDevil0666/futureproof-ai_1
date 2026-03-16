@@ -1691,6 +1691,16 @@ elif page == "📚 Guided Study Chat":
     )
 
     topic = st.text_input("Topic You Want To Study")
+
+    # ================= NEW: BOOK / SOURCE FIELD =================
+    book_source = st.text_input(
+        "📖 Reference Book / Source (Optional)",
+        placeholder="e.g. NCERT Class 9 Science, RD Sharma, HC Verma, CBSE, any book name..."
+    )
+    if book_source:
+        st.caption(f"📌 Tutor will follow the structure and style of: **{book_source}**")
+    # ============================================================
+
     level = st.selectbox("Skill Level", ["Beginner", "Intermediate", "Expert"])
     learning_goal = st.text_input("Learning Goal (Optional)")
 
@@ -1728,59 +1738,109 @@ elif page == "📚 Guided Study Chat":
                     st.session_state.study_chat_started = True
 
             else:
+                # Save book_source in study history too
                 save_study_history([
                     candidate_name,
                     education,
                     topic,
                     level,
+                    book_source if book_source else "General",
                     datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 ])
                 st.session_state.study_chat_started = True
 
+            # ================= BOOK-AWARE STUDY CONTEXT =================
+            # Build book section dynamically — no hardcoded book names
+            if book_source:
+                book_instructions = f"""
+REFERENCE BOOK / SOURCE: {book_source}
+{"=" * 50}
+BOOK-SPECIFIC TEACHING RULES:
+{"=" * 50}
+
+The student wants to learn this topic specifically from: "{book_source}"
+
+You MUST:
+- Identify the type, level, and style of "{book_source}" based on its name
+- Follow the chapter structure, flow, and sequence that "{book_source}" typically uses for {topic}
+- Use the exact definitions, terminology, formulas, and notation that "{book_source}" uses
+- Match the explanation style of "{book_source}" —
+  for example if it is a school textbook follow a concept-then-activity style,
+  if it is a problem-solving book focus on solved examples and step-by-step methods,
+  if it is a university textbook use formal academic language with theorems and proofs,
+  if it is an online course use modular bite-sized explanations with checkpoints
+- Include the type of examples, exercises, and questions that "{book_source}" typically contains
+- Stay within the scope of what "{book_source}" covers for this topic at the student's level
+- If you are not fully certain about the exact content of "{book_source}" for this specific topic,
+  clearly say so and teach using the closest standard approach matching its style and level
+
+You MUST NOT:
+- Teach content beyond what "{book_source}" typically covers at this level
+- Use terminology or notation that conflicts with "{book_source}"
+- Jump ahead to concepts that "{book_source}" introduces later in its sequence
+"""
+            else:
+                book_instructions = """
+REFERENCE BOOK / SOURCE: General / Standard Knowledge
+{"=" * 50}
+No specific book selected. Teach using standard curriculum knowledge
+appropriate for the student's education level and difficulty setting.
+"""
+
             st.session_state.study_context = f"""
-You are an expert tutor and AI career mentor.
+You are an expert tutor and AI study assistant.
 
 Teach Topic: {topic}
 Difficulty Level: {level}
 Student Education Background: {education}
-Student Goal: {learning_goal}
+Student Goal: {learning_goal if learning_goal else "General understanding of the topic"}
 
-CRITICAL TEACHING RULE — ADAPT TO EDUCATION LEVEL:
-Based on the student's education background "{education}", adjust everything:
+{book_instructions}
 
-- If the education is basic (e.g. 10th grade, high school, self-taught beginner):
+{"=" * 50}
+EDUCATION-LEVEL TEACHING RULES:
+{"=" * 50}
+
+Based on the student's education background "{education}", adjust your language and depth:
+
+- If the education is basic (e.g. school level, 10th grade, 12th grade, high school):
   * Use very simple everyday language
-  * Avoid technical jargon — if you must use a term, define it immediately
-  * Use real-world analogies (e.g. explain a database like an Excel sheet)
+  * Avoid technical jargon — if you must use a term, define it immediately in simple words
+  * Use real-world analogies and relatable examples
   * Break every concept into the smallest possible steps
-  * Use lots of examples before introducing theory
+  * Always introduce examples before theory
 
-- If the education is intermediate (e.g. Diploma, Undergraduate, Bootcamp):
-  * Assume basic programming or domain knowledge
+- If the education is intermediate (e.g. Diploma, Undergraduate, Bootcamp, college level):
+  * Assume basic domain knowledge
   * Mix theory with practical examples
-  * Introduce standard terminology but briefly explain each term
-  * You can reference related concepts they likely know
+  * Introduce standard terminology with brief explanations
+  * Reference related concepts the student likely already knows
 
-- If the education is advanced (e.g. Post Graduation, MBA, Masters, PhD, Professional):
+- If the education is advanced (e.g. Post Graduation, Masters, PhD, Professional):
   * Use precise technical language freely
-  * Skip basics unless asked
-  * Focus on depth, edge cases, and nuance
-  * You can reference research, industry standards, and advanced patterns
+  * Skip basics unless the student asks
+  * Focus on depth, edge cases, nuance, and advanced patterns
+  * Reference research, industry standards, and best practices
 
+{"=" * 50}
 ADDITIONAL RULES:
-- Stay strictly within the selected topic: {topic}
-- Further adjust explanation depth based on difficulty level: {level}
-- If difficulty is Beginner but education is advanced, keep language expert but pace slowly
-- If difficulty is Expert but education is basic, explain advanced ideas using simple analogies
-- Provide structured explanations with clear sections
-- Use code examples when relevant to the topic
-- If a question is outside the topic, politely redirect back to {topic}
-- Always check: "Would a student with {education} background understand this?"
+{"=" * 50}
+
+- Stay STRICTLY within the topic: {topic}
+- Adjust explanation depth based on difficulty level: {level}
+- If difficulty is Beginner but education is advanced — keep language expert but pace slowly
+- If difficulty is Expert but education is basic — explain advanced ideas using simple analogies
+- Always structure your explanations with clear sections and headings
+- Use formulas, diagrams (described in text), code, or examples wherever relevant to the topic
+- If the student asks something outside {topic}, politely acknowledge and redirect back to {topic}
+- At the end of each explanation, offer a follow-up question or next concept to explore
+- Always ask yourself before responding:
+  "Would a student with {education} background,
+   studying from {book_source if book_source else 'standard resources'},
+   at {level} difficulty, understand this explanation?"
 """
+            # ============================================================
 
-
-
-            
             st.session_state.study_messages = []
 
         else:
@@ -1794,13 +1854,17 @@ ADDITIONAL RULES:
     if st.session_state.study_chat_started:
 
         st.markdown("---")
-        st.subheader(f"📘 Learning Topic: {topic}")
+
+        # Show book source in chat header if provided
+        if book_source:
+            st.subheader(f"📘 {topic}  |  📖 {book_source}")
+        else:
+            st.subheader(f"📘 Learning Topic: {topic}")
 
         user_input = st.chat_input("Ask your question about this topic...")
 
         if user_input:
 
-            # FIX 3: Explicit check
             if not check_request_limit():
                 st.stop()
 
@@ -1835,7 +1899,6 @@ ADDITIONAL RULES:
             else:
                 st.info("You may revise this level once more before upgrading.")
             del st.session_state.quick_test
-
 
 # ==========================================================
 # ================= AI JOB FINDER (PREMIUM) ================

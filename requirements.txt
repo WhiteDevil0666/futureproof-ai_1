@@ -10,3 +10,5 @@ python-dotenv
 groq
 PyPDF2
 Pillow
+chromadb
+faiss-cpu

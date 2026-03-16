@@ -493,24 +493,98 @@ Return ONLY a single integer. Nothing else.
 # UP-2: SKILL GAP DETECTION
 # ═══════════════════════════════════════════════════════════
 
+def _skill_match(required_skill: str, user_skills: set) -> str:
+    """
+    Strictly checks whether a required skill is in the user's entered skills.
+    Returns: "Have" | "Partial" | "Missing"
+    - Have    → exact or near-exact match found in user_skills
+    - Partial → one keyword of a multi-word skill overlaps (e.g. user has
+                'deep learning'; required is 'deep learning frameworks')
+    - Missing → no meaningful overlap at all
+    """
+    req_clean  = required_skill.lower().strip()
+    req_words  = set(re.split(r"[\s/\-_]+", req_clean)) - {"and","or","the","of","in","for","a"}
+
+    # 1. Exact / near-exact match
+    for us in user_skills:
+        us_clean = us.lower().strip()
+        if req_clean == us_clean:
+            return "Have"
+        # normalise common abbreviations
+        if req_clean.replace(" ","") == us_clean.replace(" ",""):
+            return "Have"
+
+    # 2. Substantial word overlap  (≥50% of required words found)
+    overlap_count = 0
+    for us in user_skills:
+        us_words = set(re.split(r"[\s/\-_]+", us.lower()))
+        common   = req_words & us_words
+        if len(common) >= max(1, len(req_words) * 0.5):
+            overlap_count += 1
+
+    if overlap_count > 0:
+        return "Partial"
+
+    return "Missing"
+
+
+def validate_skill_gaps(gaps: list, skills_tuple: tuple) -> list:
+    """
+    Post-processing pass: override AI's status with ground-truth check
+    against the user's *actually entered* skills. Prevents the AI from
+    marking inferred skills (e.g. 'Calculus' because user listed 'Python')
+    as 'Have'.
+    """
+    user_skills = set(s.lower().strip() for s in skills_tuple)
+    validated   = []
+    for g in gaps:
+        skill          = g.get("skill", "")
+        ai_status      = g.get("status", "Missing")
+        ground_truth   = _skill_match(skill, user_skills)
+
+        # AI said Have  → only accept if our matcher agrees
+        if ai_status == "Have" and ground_truth == "Missing":
+            g["status"] = "Missing"
+        # AI said Missing/Partial → trust ground_truth if it says Have/Partial
+        elif ai_status == "Missing" and ground_truth in ("Have", "Partial"):
+            g["status"] = ground_truth
+        elif ai_status == "Partial" and ground_truth == "Have":
+            g["status"] = "Have"
+        # All other cases: keep AI status (AI may know synonyms we don't)
+        validated.append(g)
+    return validated
+
+
 @st.cache_data(ttl=3600)
 def detect_skill_gaps_cached(skills_tuple, target_role, domain):
     prompt = f"""
-Target Role: {target_role} | Domain: {domain}
-User's Current Skills: {", ".join(skills_tuple)}
+Target Role: {target_role}
+Domain: {domain}
+User's EXACT entered skills (this is the complete list — do NOT assume any other skills):
+{", ".join(skills_tuple)}
 
-List the top skills required for {target_role} in {domain}.
-For each, check if the user has it.
+TASK:
+List the 20-25 most important skills required for {target_role} in {domain}.
+For EACH required skill, set "status" using ONLY these strict rules:
+  - "Have"    → the skill appears VERBATIM or near-verbatim in the user's list above
+  - "Partial" → a closely related but less complete skill appears in the user's list
+  - "Missing" → the skill is NOT present in the user's list at all
 
-Return ONLY valid JSON array — no markdown, no extra text:
-[{{"skill":"Skill Name","status":"Have|Missing|Partial","priority":"Critical|Important|Nice to Have","reason":"1 line why it matters"}}]
+CRITICAL: Do NOT infer, assume, or guess. If a skill is not explicitly in the list, it is Missing.
+Example: user has "Python" → Python=Have, but "R"=Missing, "Java"=Missing (even if Python implies programming ability).
+
+Return ONLY valid JSON array — no markdown:
+[{{"skill":"Skill Name","status":"Have|Missing|Partial","priority":"Critical|Important|Nice to Have","reason":"1 line why it matters for this role"}}]
 """
     r = safe_llm_call(MAIN_MODEL, [
-        {"role": "system", "content": "Return ONLY valid JSON array."},
+        {"role": "system", "content": "Return ONLY valid JSON array. Be strict: only mark Have if the skill is explicitly in the user list."},
         {"role": "user",   "content": prompt},
-    ], temperature=0.2)
+    ], temperature=0.1)                          # lower temp = less creative, more literal
     data = safe_json_load(r)
-    return data if isinstance(data, list) else []
+    if not isinstance(data, list):
+        return []
+    # Always run the validator as a safety net
+    return validate_skill_gaps(data, skills_tuple)
 
 
 # ═══════════════════════════════════════════════════════════

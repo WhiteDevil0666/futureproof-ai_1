@@ -164,7 +164,7 @@ page = st.sidebar.radio("", [
     "📚 Guided Study Chat",
     "🤖 AI Learning Agent",
     "🎤 AI Interview Simulator",
-    "💼 AI Job Finder",
+    "💼 AI Job Finder (Premium)",
     "🔐 Admin Portal",
 ])
 

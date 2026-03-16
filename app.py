@@ -1,23 +1,10 @@
 # ==========================================================
-# FUTUREPROOF AI – v4.0 Production Build
+# FUTUREPROOF AI – v5.0 Production Build
 # ──────────────────────────────────────────────────────────
-# v3 FIXES:
-#   FIX-1  FAISS dynamic embedding dimension
-#   FIX-2  JSON parser + roadmap/interview key unwrap
-#   FIX-3  Request log auto-cleanup (prune > 500 sessions)
-#   FIX-4  Resume extraction first 2000 + last 1000 chars
-#
-# v3 UPGRADES:
-#   UP-4   AI Interview Simulator — 5 rounds, live scoring
-#   UP-5   Real Job Aggregation via SerpAPI
-#   UP-6   ChromaDB persistent vector memory (FAISS fallback)
-#
-# v4 UPGRADES:
-#   UP-7   Job Skill Matching Score — cosine similarity +
-#          keyword overlap vs pasted Job Description
-#   UP-8   AI Learning Agent — full adaptive study loop:
-#          generate plan → explain → quiz → re-explain →
-#          mastery report (all via Google Sheets)
+# v5 UPGRADES:
+#   UP-9   AI Career Copilot — persistent personal AI mentor
+#          connects ALL modules into one career OS:
+#          dashboard · weekly plan · gap analysis · chat
 # ==========================================================
 
 import streamlit as st
@@ -37,18 +24,18 @@ import PyPDF2
 from PIL import Image
 import io
 
-# ── FIX-A: OCR with path env support + version check ─────
+# ── OCR with path env support + version check ─────────────
 try:
     import pytesseract
     _tess_path = os.getenv("TESSERACT_PATH")
     if _tess_path:
         pytesseract.pytesseract.tesseract_cmd = _tess_path
-    pytesseract.get_tesseract_version()          # raises if not installed
+    pytesseract.get_tesseract_version()
     OCR_AVAILABLE = True
 except Exception:
     OCR_AVAILABLE = False
 
-# ── PERF-3 / UP-CHROMA: Vector memory (ChromaDB persistent, FAISS fallback) ──
+# ── Vector memory (ChromaDB persistent, FAISS fallback) ───
 VECTOR_MEMORY_AVAILABLE = False
 CHROMA_AVAILABLE        = False
 FAISS_AVAILABLE         = False
@@ -66,7 +53,6 @@ if _ST_AVAILABLE:
         VECTOR_MEMORY_AVAILABLE = True
     except ImportError:
         pass
-
     if not CHROMA_AVAILABLE:
         try:
             import faiss
@@ -125,6 +111,48 @@ def apply_custom_css():
     code { background-color: rgba(255,255,255,0.15) !important; color: #ffffff !important; padding: 4px 8px !important; border-radius: 6px !important; font-weight: 600 !important; }
     pre { background-color: #1e293b !important; color: #ffffff !important; padding: 16px !important; border-radius: 12px !important; border: 1px solid rgba(255,255,255,0.1) !important; }
     pre code { background: none !important; color: #ffffff !important; font-weight: 500 !important; }
+
+    /* ── Copilot-specific styles ── */
+    .copilot-card {
+        background: linear-gradient(135deg, rgba(99,102,241,0.15), rgba(59,130,246,0.10));
+        border: 1px solid rgba(99,102,241,0.35);
+        border-radius: 16px; padding: 20px 24px; margin-bottom: 14px;
+    }
+    .copilot-card h4 { color: #a5b4fc !important; margin: 0 0 8px 0; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.08em; }
+    .copilot-card p  { color: #f1f5f9 !important; margin: 0; font-size: 1.05em; font-weight: 500; }
+    .task-card {
+        background: rgba(255,255,255,0.04);
+        border-left: 3px solid #3b82f6;
+        border-radius: 0 10px 10px 0;
+        padding: 12px 16px; margin-bottom: 10px;
+    }
+    .task-card.study    { border-left-color: #6366f1; }
+    .task-card.practice { border-left-color: #f59e0b; }
+    .task-card.build    { border-left-color: #22c55e; }
+    .task-card.apply    { border-left-color: #ec4899; }
+    .task-day  { color: #94a3b8; font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.06em; }
+    .task-text { color: #f1f5f9; font-weight: 600; font-size: 0.95em; margin: 2px 0; }
+    .task-why  { color: #64748b; font-size: 0.82em; }
+    .task-dur  { color: #3b82f6; font-size: 0.78em; font-weight: 700; }
+    .milestone-box {
+        background: linear-gradient(135deg, rgba(34,197,94,0.12), rgba(16,185,129,0.08));
+        border: 1px solid rgba(34,197,94,0.3);
+        border-radius: 14px; padding: 18px 22px;
+    }
+    .milestone-box h4 { color: #86efac !important; margin: 0 0 6px 0; font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.08em; }
+    .milestone-box p  { color: #f0fdf4 !important; font-weight: 600; margin: 0; }
+    .gap-pill {
+        display: inline-block;
+        background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3);
+        border-radius: 20px; padding: 4px 12px;
+        font-size: 0.8em; color: #fca5a5 !important; margin: 3px; font-weight: 500;
+    }
+    .strength-pill {
+        display: inline-block;
+        background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.25);
+        border-radius: 20px; padding: 4px 12px;
+        font-size: 0.8em; color: #86efac !important; margin: 3px; font-weight: 500;
+    }
     </style>
     """
     st.markdown(css, unsafe_allow_html=True)
@@ -137,15 +165,15 @@ st.caption("Analyze Skills • Detect Gaps • Build Career Intelligence")
 # ================= ENV CONFIG =================
 ADMIN_USERNAME = os.getenv("ADMIN_USER")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASS")
-api_key = os.getenv("GROQ_API_KEY")
+api_key        = os.getenv("GROQ_API_KEY")
 
 if not api_key:
     st.error("❌ GROQ_API_KEY not found.")
     st.stop()
 
-client = Groq(api_key=api_key)
-MAIN_MODEL  = "llama-3.1-8b-instant"
-MCQ_MODEL   = "llama-3.3-70b-versatile"
+client     = Groq(api_key=api_key)
+MAIN_MODEL = "llama-3.1-8b-instant"
+MCQ_MODEL  = "llama-3.3-70b-versatile"
 
 MODEL_PRICING = {
     "llama-3.1-8b-instant":    0.0002,
@@ -159,6 +187,7 @@ REQUEST_LOG_FILE         = "request_log.json"
 # ================= SIDEBAR =================
 st.sidebar.markdown("## 📌 Navigation")
 page = st.sidebar.radio("", [
+    "🤖 AI Career Copilot",
     "🔎 Skill Intelligence",
     "🎓 Mock Assessment",
     "📚 Guided Study Chat",
@@ -172,6 +201,10 @@ remaining = MAX_REQUESTS_PER_SESSION - st.session_state.get("request_count", 0)
 st.sidebar.caption(f"🤖 AI Requests Remaining: {remaining}")
 
 # Reset state on page switch
+if page != "🤖 AI Career Copilot":
+    for k in ["copilot_profile", "copilot_guidance", "copilot_started", "copilot_chat_msgs"]:
+        st.session_state.pop(k, None)
+
 if page != "🎓 Mock Assessment":
     for k in ["mock_questions", "start_time", "time_limit", "exam_submitted"]:
         st.session_state.pop(k, None)
@@ -195,12 +228,12 @@ if page != "🤖 AI Learning Agent":
         st.session_state.pop(k, None)
 
 # ================= SESSION TRACKING =================
-if "current_user"   not in st.session_state: st.session_state.current_user   = "System"
+if "current_user"    not in st.session_state: st.session_state.current_user    = "System"
 if "current_feature" not in st.session_state: st.session_state.current_feature = "General"
 
 
 # ══════════════════════════════════════════════════════════
-# FIX-D: FILE-BASED REQUEST LIMIT (bypass-proof)
+# FILE-BASED REQUEST LIMIT
 # ══════════════════════════════════════════════════════════
 
 def _get_session_id() -> str:
@@ -219,7 +252,6 @@ def _load_request_log() -> dict:
 
 def _save_request_log(log: dict):
     try:
-        # FIX-3: Prune stale sessions to cap file size
         if len(log) > 500:
             cutoff = time.time() - 3600
             log    = {sid: ts for sid, ts in log.items()
@@ -234,8 +266,6 @@ def check_request_limit() -> bool:
     session_id = _get_session_id()
     now        = time.time()
     log        = _load_request_log()
-
-    # Rolling 1-hour window — purge stale entries
     cutoff     = now - 3600
     timestamps = [t for t in log.get(session_id, []) if t > cutoff]
 
@@ -264,10 +294,9 @@ def log_api_usage(event_type, status):
         f.write(f"{timestamp} | {event_type} | {status}\n")
 
 
-# FIX-C: Exponential backoff on Groq 429 / transient errors
 def safe_llm_call(model, messages, temperature=0.3, retries=3):
-    user    = st.session_state.get("current_user",   "System")
-    feature = st.session_state.get("current_feature","General")
+    user    = st.session_state.get("current_user",    "System")
+    feature = st.session_state.get("current_feature", "General")
 
     for attempt in range(retries):
         try:
@@ -301,7 +330,7 @@ def safe_llm_call(model, messages, temperature=0.3, retries=3):
             return content
 
         except Exception as e:
-            wait = 2 ** attempt          # FIX-C: 1s → 2s → 4s
+            wait = 2 ** attempt
             print(f"LLM Attempt {attempt+1} failed ({e}). Retrying in {wait}s…")
             time.sleep(wait)
 
@@ -310,7 +339,7 @@ def safe_llm_call(model, messages, temperature=0.3, retries=3):
 
 
 # ═══════════════════════════════════════════════════════════
-# FIX-B: SAFE JSON LOADER — unwraps dict wrappers too
+# SAFE JSON LOADER
 # ═══════════════════════════════════════════════════════════
 
 def safe_json_load(text):
@@ -319,7 +348,6 @@ def safe_json_load(text):
     try:
         cleaned = text.replace("```json", "").replace("```", "").strip()
 
-        # 1) Try array first
         s = cleaned.find("[")
         e = cleaned.rfind("]") + 1
         if s != -1 and e > s:
@@ -328,7 +356,6 @@ def safe_json_load(text):
             except Exception:
                 pass
 
-        # 2) Try object — then unwrap common dict wrappers
         s = cleaned.find("{")
         e = cleaned.rfind("}") + 1
         if s != -1 and e > s:
@@ -349,8 +376,8 @@ def safe_json_load(text):
 # SKILL NORMALIZER
 # ═══════════════════════════════════════════════════════════
 
-MAX_SKILLS      = 20
-MAX_SKILL_LEN   = 50
+MAX_SKILLS    = 20
+MAX_SKILL_LEN = 50
 
 def normalize_skills(skills_input: str) -> list:
     if not skills_input:
@@ -366,7 +393,7 @@ def normalize_skills(skills_input: str) -> list:
 
 
 # ═══════════════════════════════════════════════════════════
-# VECTOR MEMORY — ChromaDB (persistent) with FAISS fallback
+# VECTOR MEMORY
 # ═══════════════════════════════════════════════════════════
 
 CHROMA_DIR = "chroma_study_db"
@@ -377,10 +404,7 @@ def _get_embedder():
     return st.session_state.study_embedder
 
 
-# ── ChromaDB helpers ──────────────────────────────────────
-
 def _get_chroma_collection(user: str, topic: str):
-    """Returns (or creates) a persistent ChromaDB collection scoped to user+topic."""
     safe_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", f"{user}_{topic}")[:60]
     client_c  = chromadb.PersistentClient(path=CHROMA_DIR)
     return client_c.get_or_create_collection(
@@ -403,25 +427,22 @@ def _chroma_add(user: str, topic: str, question: str, answer: str):
 
 def _chroma_query(user: str, topic: str, query: str, top_k: int = 3) -> str:
     try:
-        col       = _get_chroma_collection(user, topic)
+        col = _get_chroma_collection(user, topic)
         if col.count() == 0:
             return ""
-        embedder  = _get_embedder()
-        q_emb     = embedder.encode([query], normalize_embeddings=True).tolist()[0]
-        results   = col.query(query_embeddings=[q_emb], n_results=min(top_k, col.count()))
-        docs      = results.get("documents", [[]])[0]
+        embedder = _get_embedder()
+        q_emb    = embedder.encode([query], normalize_embeddings=True).tolist()[0]
+        results  = col.query(query_embeddings=[q_emb], n_results=min(top_k, col.count()))
+        docs     = results.get("documents", [[]])[0]
         return "\n\n".join(docs)
     except Exception as e:
         print("ChromaDB query error:", e)
         return ""
 
 
-# ── FAISS fallback helpers (session-only) ─────────────────
-
 def _init_faiss():
     if "study_faiss_index" not in st.session_state:
         embedder = _get_embedder()
-        # FIX-1: dynamic dimension — works with any sentence-transformer model
         dim = embedder.get_sentence_embedding_dimension()
         st.session_state.study_faiss_index  = faiss.IndexFlatL2(dim)
         st.session_state.study_memory_texts = []
@@ -450,8 +471,6 @@ def _faiss_query(query: str, top_k: int = 3) -> str:
     return "\n\n".join(texts[i] for i in idxs[0] if 0 <= i < len(texts))
 
 
-# ── Public API — routes to ChromaDB or FAISS ─────────────
-
 def add_to_memory(question: str, answer: str):
     if not VECTOR_MEMORY_AVAILABLE:
         return
@@ -474,7 +493,6 @@ def retrieve_memory(query: str, top_k: int = 3) -> str:
 
 
 def reset_study_memory():
-    """Session reset — clears FAISS index (ChromaDB persists by design)."""
     for k in ("study_faiss_index", "study_memory_texts", "study_embedder"):
         st.session_state.pop(k, None)
 
@@ -596,31 +614,20 @@ Return ONLY a single integer. Nothing else.
 
 
 # ═══════════════════════════════════════════════════════════
-# UP-2: SKILL GAP DETECTION
+# SKILL GAP DETECTION
 # ═══════════════════════════════════════════════════════════
 
 def _skill_match(required_skill: str, user_skills: set) -> str:
-    """
-    Strictly checks whether a required skill is in the user's entered skills.
-    Returns: "Have" | "Partial" | "Missing"
-    - Have    → exact or near-exact match found in user_skills
-    - Partial → one keyword of a multi-word skill overlaps (e.g. user has
-                'deep learning'; required is 'deep learning frameworks')
-    - Missing → no meaningful overlap at all
-    """
-    req_clean  = required_skill.lower().strip()
-    req_words  = set(re.split(r"[\s/\-_]+", req_clean)) - {"and","or","the","of","in","for","a"}
+    req_clean = required_skill.lower().strip()
+    req_words = set(re.split(r"[\s/\-_]+", req_clean)) - {"and","or","the","of","in","for","a"}
 
-    # 1. Exact / near-exact match
     for us in user_skills:
         us_clean = us.lower().strip()
         if req_clean == us_clean:
             return "Have"
-        # normalise common abbreviations
         if req_clean.replace(" ","") == us_clean.replace(" ",""):
             return "Have"
 
-    # 2. Substantial word overlap  (≥50% of required words found)
     overlap_count = 0
     for us in user_skills:
         us_words = set(re.split(r"[\s/\-_]+", us.lower()))
@@ -630,33 +637,23 @@ def _skill_match(required_skill: str, user_skills: set) -> str:
 
     if overlap_count > 0:
         return "Partial"
-
     return "Missing"
 
 
 def validate_skill_gaps(gaps: list, skills_tuple: tuple) -> list:
-    """
-    Post-processing pass: override AI's status with ground-truth check
-    against the user's *actually entered* skills. Prevents the AI from
-    marking inferred skills (e.g. 'Calculus' because user listed 'Python')
-    as 'Have'.
-    """
     user_skills = set(s.lower().strip() for s in skills_tuple)
     validated   = []
     for g in gaps:
-        skill          = g.get("skill", "")
-        ai_status      = g.get("status", "Missing")
-        ground_truth   = _skill_match(skill, user_skills)
+        skill        = g.get("skill", "")
+        ai_status    = g.get("status", "Missing")
+        ground_truth = _skill_match(skill, user_skills)
 
-        # AI said Have  → only accept if our matcher agrees
         if ai_status == "Have" and ground_truth == "Missing":
             g["status"] = "Missing"
-        # AI said Missing/Partial → trust ground_truth if it says Have/Partial
         elif ai_status == "Missing" and ground_truth in ("Have", "Partial"):
             g["status"] = ground_truth
         elif ai_status == "Partial" and ground_truth == "Have":
             g["status"] = "Have"
-        # All other cases: keep AI status (AI may know synonyms we don't)
         validated.append(g)
     return validated
 
@@ -677,7 +674,6 @@ For EACH required skill, set "status" using ONLY these strict rules:
   - "Missing" → the skill is NOT present in the user's list at all
 
 CRITICAL: Do NOT infer, assume, or guess. If a skill is not explicitly in the list, it is Missing.
-Example: user has "Python" → Python=Have, but "R"=Missing, "Java"=Missing (even if Python implies programming ability).
 
 Return ONLY valid JSON array — no markdown:
 [{{"skill":"Skill Name","status":"Have|Missing|Partial","priority":"Critical|Important|Nice to Have","reason":"1 line why it matters for this role"}}]
@@ -685,16 +681,15 @@ Return ONLY valid JSON array — no markdown:
     r = safe_llm_call(MAIN_MODEL, [
         {"role": "system", "content": "Return ONLY valid JSON array. Be strict: only mark Have if the skill is explicitly in the user list."},
         {"role": "user",   "content": prompt},
-    ], temperature=0.1)                          # lower temp = less creative, more literal
+    ], temperature=0.1)
     data = safe_json_load(r)
     if not isinstance(data, list):
         return []
-    # Always run the validator as a safety net
     return validate_skill_gaps(data, skills_tuple)
 
 
 # ═══════════════════════════════════════════════════════════
-# UP-1: AI LEARNING PATH (WEEK-BY-WEEK ROADMAP)
+# LEARNING PATH (ROADMAP)
 # ═══════════════════════════════════════════════════════════
 
 @st.cache_data(ttl=3600)
@@ -720,7 +715,7 @@ Return ONLY valid JSON array — no markdown, no extra text:
 
 
 # ═══════════════════════════════════════════════════════════
-# UP-3: RESUME SKILL EXTRACTION AI
+# RESUME SKILL EXTRACTION
 # ═══════════════════════════════════════════════════════════
 
 def extract_skills_from_resume(resume_text: str) -> list:
@@ -746,40 +741,20 @@ No explanations. No markdown.
     return []
 
 
-
 # ═══════════════════════════════════════════════════════════
-# UP-4: AI INTERVIEW SIMULATOR
+# AI INTERVIEW SIMULATOR
 # ═══════════════════════════════════════════════════════════
 
 INTERVIEW_ROUNDS = [
-    {"id": "intro",    "label": "🧊 Round 1 — Ice Breaker",       "focus": "background, motivation, career goals"},
-    {"id": "technical","label": "💻 Round 2 — Technical Deep Dive","focus": "technical skills, problem-solving, code logic"},
-    {"id": "behavioral","label":"🤝 Round 3 — Behavioural",        "focus": "teamwork, conflict, STAR-format stories"},
-    {"id": "system",   "label": "🏗️ Round 4 — System Design",     "focus": "architecture, scalability, trade-offs"},
-    {"id": "closing",  "label": "🎯 Round 5 — Closing & Feedback", "focus": "candidate questions, overall impression"},
+    {"id": "intro",     "label": "🧊 Round 1 — Ice Breaker",        "focus": "background, motivation, career goals"},
+    {"id": "technical", "label": "💻 Round 2 — Technical Deep Dive", "focus": "technical skills, problem-solving, code logic"},
+    {"id": "behavioral","label": "🤝 Round 3 — Behavioural",         "focus": "teamwork, conflict, STAR-format stories"},
+    {"id": "system",    "label": "🏗️ Round 4 — System Design",      "focus": "architecture, scalability, trade-offs"},
+    {"id": "closing",   "label": "🎯 Round 5 — Closing & Feedback",  "focus": "candidate questions, overall impression"},
 ]
 
 
-def build_interviewer_system(role: str, domain: str, difficulty: str,
-                             round_focus: str, conversation_so_far: str) -> str:
-    return (
-        f"You are a senior {role} interviewer at a top tech company. "
-        f"Domain: {domain}. Interview difficulty: {difficulty}.\n"
-        f"Current round focus: {round_focus}.\n"
-        f"Rules:\n"
-        f"- Ask ONE question at a time — never multiple questions in one turn.\n"
-        f"- After the candidate answers, critique briefly (2-3 lines: what was good, what was missing).\n"
-        f"- Give a score for that answer: X/10.\n"
-        f"- Then ask the NEXT follow-up or move to the next topic.\n"
-        f"- Be professional but challenging. Push back on vague answers.\n"
-        f"- Do NOT reveal answers yourself — guide with follow-up probes.\n"
-        f"- Keep each response under 150 words.\n"
-        f"Conversation so far: {conversation_so_far[-2000:] if conversation_so_far else 'None'}"
-    )
-
-
-def generate_interview_opening(role: str, domain: str, difficulty: str,
-                                round_info: dict, skills: list) -> str:
+def generate_interview_opening(role, domain, difficulty, round_info, skills):
     prompt = (
         f"You are a senior {role} interviewer. "
         f"Open {round_info['label']} interview. "
@@ -790,11 +765,10 @@ def generate_interview_opening(role: str, domain: str, difficulty: str,
         f"Keep total response under 80 words."
     )
     return safe_llm_call(MCQ_MODEL, [{"role": "user", "content": prompt}], temperature=0.5) or \
-           f"Welcome to {round_info['label']}. Let's begin. {round_info['focus'].capitalize()} — tell me about yourself."
+           f"Welcome to {round_info['label']}. Let's begin. Tell me about yourself."
 
 
-def evaluate_interview_answer(question: str, answer: str, role: str, difficulty: str) -> dict:
-    """Score a single interview answer. Returns score + feedback."""
+def evaluate_interview_answer(question, answer, role, difficulty):
     if not answer or not answer.strip():
         return {"score": 0, "feedback": "No answer provided.", "follow_up": "Could you please attempt an answer?"}
     prompt = f"""
@@ -821,18 +795,15 @@ Score guide: 9-10 excellent | 7-8 good minor gaps | 5-6 adequate | 3-4 weak | 0-
         return {"score": 0, "feedback": "Could not parse evaluation.", "follow_up": "Let's continue."}
 
 
-def generate_interview_report(role: str, score_log: list) -> str:
-    """Generate final interview debrief after all rounds."""
+def generate_interview_report(role, score_log):
     avg = round(sum(s["score"] for s in score_log) / len(score_log), 1) if score_log else 0
     summary = "\n".join(
         f"Round {s['round']}: {s['question'][:80]}… → {s['score']}/10" for s in score_log
     )
     prompt = f"""
 You are a senior {role} interviewer. The candidate has completed a full mock interview.
-
 Score log:
 {summary}
-
 Average score: {avg}/10
 
 Write a professional debrief (8-12 lines) covering:
@@ -841,14 +812,12 @@ Write a professional debrief (8-12 lines) covering:
 3. Top 2 areas needing improvement
 4. Hiring recommendation: Strong Yes / Yes / Maybe / No
 5. One specific tip to prepare better
-
-Be honest, direct, and constructive.
 """
     return safe_llm_call(MCQ_MODEL, [{"role": "user", "content": prompt}], temperature=0.4) or \
            f"Interview complete. Average score: {avg}/10."
 
 
-def save_interview_result(data_row: list):
+def save_interview_result(data_row):
     try:
         gc = _gs_client()
         try:    sheet = gc.open("FutureProof_Interview_Results").sheet1
@@ -859,27 +828,19 @@ def save_interview_result(data_row: list):
 
 
 # ═══════════════════════════════════════════════════════════
-# UP-5: REAL JOB AGGREGATION (SerpAPI / fallback links)
+# REAL JOB AGGREGATION (SerpAPI)
 # ═══════════════════════════════════════════════════════════
 
-SERPAPI_KEY = os.getenv("SERPAPI_KEY")   # optional — set in env for live results
+SERPAPI_KEY = os.getenv("SERPAPI_KEY")
 
-def fetch_real_jobs(role: str, location: str = "India", num: int = 6) -> list:
-    """
-    Fetches live job listings via SerpAPI Google Jobs.
-    Returns list of dicts: {title, company, location, snippet, apply_link}
-    Falls back to empty list if API key not set or call fails.
-    """
+def fetch_real_jobs(role, location="India", num=6):
     if not SERPAPI_KEY:
         return []
     try:
         import urllib.request, urllib.parse
         params = urllib.parse.urlencode({
-            "engine":   "google_jobs",
-            "q":        role,
-            "location": location,
-            "hl":       "en",
-            "api_key":  SERPAPI_KEY,
+            "engine": "google_jobs", "q": role, "location": location,
+            "hl": "en", "api_key": SERPAPI_KEY,
         })
         url = f"https://serpapi.com/search.json?{params}"
         with urllib.request.urlopen(url, timeout=8) as resp:
@@ -901,14 +862,12 @@ def fetch_real_jobs(role: str, location: str = "India", num: int = 6) -> list:
         return []
 
 
-def render_job_cards(jobs: list):
-    """Renders fetched jobs as styled cards in Streamlit."""
+def render_job_cards(jobs):
     if not jobs:
         return
     st.markdown("### 💼 Live Job Listings")
     for j in jobs:
-        with st.container():
-            st.markdown(f"""
+        st.markdown(f"""
 <div style="background:rgba(255,255,255,0.06);border-radius:12px;padding:16px 20px;
 margin-bottom:12px;border:1px solid rgba(255,255,255,0.1);">
   <h4 style="margin:0;color:#60a5fa;">{j['title']}</h4>
@@ -920,67 +879,47 @@ margin-bottom:12px;border:1px solid rgba(255,255,255,0.1);">
 
 
 # ═══════════════════════════════════════════════════════════
-# UP-7: JOB SKILL MATCHING SCORE (cosine similarity vs JD)
+# JOB SKILL MATCHING SCORE
 # ═══════════════════════════════════════════════════════════
 
-def compute_job_match_score(user_skills: list, jd_text: str) -> dict:
-    """
-    Computes a job match score between user skills and a job description.
-
-    Two-layer approach:
-      Layer 1 — Semantic similarity via sentence-transformers (0-100)
-      Layer 2 — Keyword overlap: how many JD skill keywords the user has
-
-    Returns dict with: overall_score, semantic_score, keyword_score,
-                       matched_keywords, missing_keywords, breakdown_label
-    """
+def compute_job_match_score(user_skills, jd_text):
     if not jd_text or not jd_text.strip():
         return {}
 
-    # ── Layer 1: Semantic similarity ─────────────────────
     semantic_score = 0
     if _ST_AVAILABLE:
         try:
             embedder    = _get_embedder()
             skills_text = ", ".join(user_skills)
-            emb_skills  = embedder.encode([skills_text],  normalize_embeddings=True)
+            emb_skills  = embedder.encode([skills_text],    normalize_embeddings=True)
             emb_jd      = embedder.encode([jd_text[:1500]], normalize_embeddings=True)
-            # cosine similarity = dot product of normalised vectors
-            cos_sim      = float(np.dot(emb_skills[0], emb_jd[0]))
+            cos_sim     = float(np.dot(emb_skills[0], emb_jd[0]))
             semantic_score = round(max(0, min(cos_sim, 1)) * 100, 1)
         except Exception as e:
             print("Embedding error:", e)
 
-    # ── Layer 2: Keyword overlap ──────────────────────────
-    # Extract skill-like tokens from JD (2+ chars, alphabetic/numeric)
     jd_lower   = jd_text.lower()
     user_lower = set(s.lower().strip() for s in user_skills)
-
-    # Common tech skill keywords to look for in JD
     jd_words   = set(re.findall(r"\b[a-z][a-z0-9+#.\-]{1,30}\b", jd_lower))
-    # Filter to words that look like skills (not stopwords)
     stopwords  = {"and","the","for","with","using","have","will","able","work",
                   "team","good","strong","knowledge","experience","understanding",
                   "proficiency","familiarity","years","role","position","job",
                   "responsibilities","requirements","preferred","plus","etc"}
     jd_skills  = jd_words - stopwords
-
-    matched  = sorted(user_lower & jd_skills)
-    missing  = sorted(jd_skills - user_lower - stopwords)[:15]   # top 15 missing
-
+    matched    = sorted(user_lower & jd_skills)
+    missing    = sorted(jd_skills - user_lower - stopwords)[:15]
     keyword_score = round(len(matched) / max(len(jd_skills), 1) * 100, 1)
     keyword_score = min(keyword_score, 100)
 
-    # ── Combined score (60% semantic + 40% keyword) ───────
     if _ST_AVAILABLE:
         overall = round(semantic_score * 0.60 + keyword_score * 0.40, 1)
     else:
-        overall = keyword_score   # fallback if no embeddings
+        overall = keyword_score
 
     label = (
-        "🟢 Excellent Match"  if overall >= 75 else
-        "🟡 Good Match"       if overall >= 55 else
-        "🟠 Partial Match"    if overall >= 35 else
+        "🟢 Excellent Match" if overall >= 75 else
+        "🟡 Good Match"      if overall >= 55 else
+        "🟠 Partial Match"   if overall >= 35 else
         "🔴 Low Match"
     )
 
@@ -994,7 +933,7 @@ def compute_job_match_score(user_skills: list, jd_text: str) -> dict:
     }
 
 
-def save_job_match(data_row: list):
+def save_job_match(data_row):
     try:
         gc = _gs_client()
         try:    sheet = gc.open("FutureProof_Job_Matches").sheet1
@@ -1005,24 +944,15 @@ def save_job_match(data_row: list):
 
 
 # ═══════════════════════════════════════════════════════════
-# UP-8: AI LEARNING AGENT (adaptive study loop)
+# AI LEARNING AGENT
 # ═══════════════════════════════════════════════════════════
 
-def generate_learning_plan(topic: str, level: str, goal: str) -> list:
-    """
-    Generates an ordered list of subtopics/modules for a topic.
-    Returns list of dicts: [{step, title, objective}]
-    """
+def generate_learning_plan(topic, level, goal):
     prompt = f"""
 You are an expert curriculum designer.
-
-Topic: {topic}
-Level: {level}
-Goal: {goal or "Thorough understanding"}
+Topic: {topic} | Level: {level} | Goal: {goal or "Thorough understanding"}
 
 Break this topic into 5-7 sequential learning modules.
-Each module should build on the previous one.
-
 Return ONLY valid JSON array — no markdown:
 [{{"step":1,"title":"Module Title","objective":"What the learner can do after this module"}}]
 """
@@ -1034,10 +964,7 @@ Return ONLY valid JSON array — no markdown:
     return data if isinstance(data, list) else []
 
 
-def generate_module_explanation(topic: str, module_title: str,
-                                 module_objective: str, level: str,
-                                 education: str, past_context: str = "") -> str:
-    """AI explains the current learning module."""
+def generate_module_explanation(topic, module_title, module_objective, level, education, past_context=""):
     context_line = f"\nWhat student already knows: {past_context[:400]}" if past_context else ""
     prompt = (
         f"Expert tutor. Topic: {topic}. Level: {level}. Student background: {education}.\n"
@@ -1050,8 +977,7 @@ def generate_module_explanation(topic: str, module_title: str,
            f"Module: {module_title} — explanation unavailable."
 
 
-def generate_module_quiz(topic: str, module_title: str, level: str) -> list:
-    """Generates 3 MCQs to test the current module. Returns list of MCQ dicts."""
+def generate_module_quiz(topic, module_title, level):
     prompt = f"""
 Create 3 multiple choice questions to test understanding of:
 Topic: {topic} | Module: {module_title} | Difficulty: {level}
@@ -1070,9 +996,7 @@ Return ONLY valid JSON array:
     return data if isinstance(data, list) else []
 
 
-def generate_re_explanation(topic: str, module_title: str, level: str,
-                             wrong_questions: list) -> str:
-    """Re-explains the module differently when student scores < 60%."""
+def generate_re_explanation(topic, module_title, level, wrong_questions):
     wrongs = "; ".join(q.get("question","")[:60] for q in wrong_questions)
     prompt = (
         f"The student struggled with: {wrongs}.\n"
@@ -1084,8 +1008,7 @@ def generate_re_explanation(topic: str, module_title: str, level: str,
            "Let's try a different approach for this module."
 
 
-def generate_mastery_report(name: str, topic: str, plan: list, scores: list) -> str:
-    """Final mastery report after all modules complete."""
+def generate_mastery_report(name, topic, plan, scores):
     summary = "\n".join(
         f"Module {i+1} ({p.get('title','')[:40]}): {s}%" for i, (p, s) in enumerate(zip(plan, scores))
     )
@@ -1102,14 +1025,12 @@ Write a concise mastery report (6-8 lines):
 3. Modules needing review
 4. One actionable next step
 5. Encouragement
-
-Be direct and motivating.
 """
     return safe_llm_call(MCQ_MODEL, [{"role": "user", "content": prompt}], temperature=0.4) or \
            f"Topic complete! Average score: {avg}%."
 
 
-def save_agent_progress(data_row: list):
+def save_agent_progress(data_row):
     try:
         gc = _gs_client()
         try:    sheet = gc.open("FutureProof_Agent_Progress").sheet1
@@ -1147,7 +1068,6 @@ Return ONLY valid JSON array:
     return None
 
 
-# PERF-1: Cached MCQ generation
 @st.cache_data(ttl=3600)
 def cached_generate_mcqs(skills_tuple, difficulty, test_mode, mcq_count):
     return generate_mcqs(list(skills_tuple), difficulty, test_mode, mcq_count)
@@ -1163,7 +1083,6 @@ Return ONLY valid JSON array:
 - Require actual code writing
 - Include short hint
 - No multiple choice, no answers
-- Beginner: basic loops/conditions | Intermediate: DS/algorithms/OOP | Expert: system design/optimization
 """
     r = safe_llm_call(MCQ_MODEL, [
         {"role": "system", "content": "Return ONLY valid JSON array."},
@@ -1185,7 +1104,7 @@ def generate_explanation(question, correct_answer):
     prompt = f"""
 Question: {question}
 Correct Answer: {correct_answer}
-Explain briefly (2-4 lines) why this answer is correct. Educational and clear. No repetition.
+Explain briefly (2-4 lines) why this answer is correct. Educational and clear.
 """
     return safe_llm_call(MAIN_MODEL, [{"role": "user", "content": prompt}], temperature=0.3) or "Explanation unavailable."
 
@@ -1201,7 +1120,6 @@ Difficulty: {difficulty}
 
 Return ONLY JSON — no markdown:
 {{"score":<0-10>,"feedback":"2-3 lines: what was good / wrong","model_answer":"short correct code 3-6 lines"}}
-Scoring: 9-10 correct+efficient+clean | 7-8 correct minor issues | 5-6 partial | 3-4 off track | 0-2 blank/wrong
 """
     r = safe_llm_call(MCQ_MODEL, [
         {"role": "system", "content": "Return ONLY valid JSON."},
@@ -1215,10 +1133,6 @@ Scoring: 9-10 correct+efficient+clean | 7-8 correct minor issues | 5-6 partial |
     except Exception:
         return {"score": 0, "feedback": "Could not parse evaluation.", "model_answer": "N/A"}
 
-
-# ═══════════════════════════════════════════════════════════
-# TIMER CONFIG
-# ═══════════════════════════════════════════════════════════
 
 def get_time_limit(difficulty, mcq_count=10, test_mode="Theoretical Knowledge"):
     tpq = {"Beginner": 12, "Intermediate": 24, "Expert": 36}
@@ -1277,7 +1191,7 @@ def save_study_history(data_row):
         st.error(f"Study History Error: {e}")
 
 
-def check_study_history(name, education, topic, level) -> bool:
+def check_study_history(name, education, topic, level):
     try:
         sheet = _gs_client().open("FutureProof_Study_History").sheet1
         data  = sheet.get_all_records()
@@ -1292,6 +1206,16 @@ def check_study_history(name, education, topic, level) -> bool:
         ].empty
     except Exception:
         return False
+
+
+def save_interview_result(data_row):
+    try:
+        gc = _gs_client()
+        try:    sheet = gc.open("FutureProof_Interview_Results").sheet1
+        except: sheet = gc.create("FutureProof_Interview_Results").sheet1
+        sheet.append_row(data_row)
+    except Exception as e:
+        print("Interview Sheet Error:", e)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1325,8 +1249,10 @@ def analyze_user_trend(name):
     trend = "stable"
     if len(scores) >= 2:
         trend = "improving" if scores[-1] > scores[-2] else ("declining" if scores[-1] < scores[-2] else "stable")
-    return {"latest": scores[-1], "best": max(scores),
-            "average": sum(scores)/len(scores), "total_tests": len(scores), "trend": trend}
+    return {
+        "latest": scores[-1], "best": max(scores),
+        "average": sum(scores)/len(scores), "total_tests": len(scores), "trend": trend,
+    }
 
 
 def recommend_difficulty(perf):
@@ -1342,11 +1268,629 @@ Greet personally, analyze trend, encourage, suggest next step. Professional + mo
     return safe_llm_call("llama-3.3-70b-versatile", [{"role":"user","content":prompt}], temperature=0.5)
 
 
+# ═══════════════════════════════════════════════════════════
+# ████████  AI CAREER COPILOT — FUNCTIONS  ████████████████
+# ═══════════════════════════════════════════════════════════
+
+def save_copilot_profile(data_row: list):
+    try:
+        gc = _gs_client()
+        try:    sheet = gc.open("FutureProof_Copilot_Profiles").sheet1
+        except: sheet = gc.create("FutureProof_Copilot_Profiles").sheet1
+        sheet.append_row(data_row)
+    except Exception as e:
+        print("Copilot Profile Sheet Error:", e)
+
+
+def _load_interview_history(name: str) -> dict:
+    try:
+        sheet = _gs_client().open("FutureProof_Interview_Results").sheet1
+        rows  = sheet.get_all_records()
+        if not rows: return {}
+        df = pd.DataFrame(rows)
+        df.columns = df.columns.str.lower().str.strip()
+        if "name" not in df.columns: return {}
+        user_df = df[df["name"].str.lower() == name.lower()]
+        if user_df.empty: return {}
+        scores = pd.to_numeric(
+            user_df["avg_score"] if "avg_score" in user_df.columns else pd.Series(),
+            errors="coerce"
+        ).dropna()
+        return {
+            "avg_score":   float(scores.mean()) if len(scores) else 0.0,
+            "rounds_done": int(user_df["rounds_completed"].sum())
+                           if "rounds_completed" in user_df.columns else 0,
+            "sessions":    len(user_df),
+        }
+    except Exception:
+        return {}
+
+
+def _load_agent_history(name: str) -> dict:
+    try:
+        sheet = _gs_client().open("FutureProof_Agent_Progress").sheet1
+        rows  = sheet.get_all_records()
+        if not rows: return {}
+        df = pd.DataFrame(rows)
+        df.columns = df.columns.str.lower().str.strip()
+        if "name" not in df.columns: return {}
+        user_df = df[df["name"].str.lower() == name.lower()]
+        if user_df.empty: return {}
+        avgs   = pd.to_numeric(
+            user_df["avg_mastery"] if "avg_mastery" in user_df.columns else pd.Series(),
+            errors="coerce"
+        ).dropna()
+        topics = user_df["topic"].dropna().tolist() if "topic" in user_df.columns else []
+        return {
+            "avg_score":    float(avgs.mean()) if len(avgs) else 0.0,
+            "modules_done": int(user_df["modules_completed"].sum())
+                            if "modules_completed" in user_df.columns else 0,
+            "topics":       topics[-5:],
+        }
+    except Exception:
+        return {}
+
+
+def build_career_profile(name, goal_role, domain, education, skills,
+                         skill_gaps, mock_history, interview_history, agent_history):
+    skill_base    = min(len(skills) * 5, 30)
+    gap_have      = [g for g in skill_gaps if g.get("status") == "Have"]
+    gap_base      = round(len(gap_have) / max(len(skill_gaps), 1) * 30)
+    mock_avg      = mock_history.get("average", 0)
+    mock_base     = round(min(mock_avg, 100) / 100 * 20)
+    iv_avg        = interview_history.get("avg_score", 0)
+    iv_base       = round(min(iv_avg * 10, 100) / 100 * 20)
+    readiness     = min(skill_base + gap_base + mock_base + iv_base, 100)
+
+    critical_gaps  = [g["skill"] for g in skill_gaps
+                      if g.get("status") in ("Missing","Partial") and g.get("priority") == "Critical"][:5]
+    important_gaps = [g["skill"] for g in skill_gaps
+                      if g.get("status") in ("Missing","Partial") and g.get("priority") == "Important"][:5]
+
+    return {
+        "name":             name,
+        "goal_role":        goal_role,
+        "domain":           domain,
+        "education":        education,
+        "skills":           skills,
+        "skill_count":      len(skills),
+        "readiness":        readiness,
+        "critical_gaps":    critical_gaps,
+        "important_gaps":   important_gaps,
+        "mock_avg":         mock_avg,
+        "mock_tests":       mock_history.get("total_tests", 0),
+        "mock_trend":       mock_history.get("trend", "no data"),
+        "mock_latest":      mock_history.get("latest", 0),
+        "interview_avg":    iv_avg,
+        "interview_rounds": interview_history.get("rounds_done", 0),
+        "learning_modules": agent_history.get("modules_done", 0),
+        "learning_avg":     agent_history.get("avg_score", 0),
+        "learning_topics":  agent_history.get("topics", []),
+    }
+
+
+def generate_copilot_guidance(profile: dict) -> dict:
+    profile_str = json.dumps(
+        {k: v for k, v in profile.items() if k != "skills"}, indent=2
+    )
+    prompt = f"""
+You are an elite AI Career Mentor with deep knowledge of hiring, skill development, and career growth.
+
+Here is the candidate's complete career profile:
+{profile_str}
+
+Their goal: {profile['goal_role']} in {profile['domain']}
+Education: {profile['education']}
+Current readiness: {profile['readiness']}%
+
+Based on ALL of this data, generate a highly personalised weekly career plan.
+
+Return ONLY valid JSON — no markdown, no extra text:
+{{
+  "weekly_plan": [
+    {{"day": "Monday",    "task": "Specific action", "type": "study|practice|apply|build", "duration": "30 min", "why": "1 line reason"}},
+    {{"day": "Tuesday",   "task": "...", "type": "...", "duration": "...", "why": "..."}},
+    {{"day": "Wednesday", "task": "...", "type": "...", "duration": "...", "why": "..."}},
+    {{"day": "Friday",    "task": "...", "type": "...", "duration": "...", "why": "..."}},
+    {{"day": "Weekend",   "task": "...", "type": "...", "duration": "...", "why": "..."}}
+  ],
+  "strengths":         ["strength 1", "strength 2", "strength 3"],
+  "focus_areas":       ["area 1 with specific advice", "area 2 with specific advice"],
+  "next_milestone":    "The single most important goal to achieve in the next 2-4 weeks",
+  "motivation":        "1-2 lines of personalised, data-driven encouragement based on their actual numbers",
+  "readiness_label":   "one of: Foundation Building | Skill Development | Interview Ready | Job Ready | Promotion Track",
+  "job_readiness_tip": "One specific thing that would most increase job offer chances right now"
+}}
+
+Rules:
+- weekly_plan must have exactly 5 items
+- Be SPECIFIC — mention actual skill names from their profile, real numbers
+- Be HONEST — if readiness is low, say so constructively
+- Calibrate to their education and experience level
+"""
+    r = safe_llm_call(MCQ_MODEL, [
+        {"role": "system", "content": "Return ONLY valid JSON. No markdown. No explanation."},
+        {"role": "user",   "content": prompt},
+    ], temperature=0.4)
+
+    data = safe_json_load(r)
+    if isinstance(data, dict) and "weekly_plan" in data:
+        return data
+
+    return {
+        "weekly_plan": [
+            {"day": "Monday",    "task": "Study top critical skill gap",       "type": "study",    "duration": "45 min", "why": "Closes your biggest gap"},
+            {"day": "Wednesday", "task": "Take a Mock Assessment",             "type": "practice", "duration": "30 min", "why": "Track your progress"},
+            {"day": "Thursday",  "task": "Run one Interview Simulator round",  "type": "practice", "duration": "20 min", "why": "Build confidence"},
+            {"day": "Saturday",  "task": "Build a small portfolio project",    "type": "build",    "duration": "2 hrs",  "why": "Demonstrate skills"},
+            {"day": "Sunday",    "task": "Review your Skill Gap report",       "type": "study",    "duration": "20 min", "why": "Stay focused"},
+        ],
+        "strengths":         ["Consistent engagement", "Multi-skill foundation"],
+        "focus_areas":       ["Close critical skill gaps", "Improve mock test scores"],
+        "next_milestone":    f"Achieve 80%+ on Mock Assessment for {profile.get('goal_role','')}",
+        "motivation":        "Every session moves you closer. Keep the momentum.",
+        "readiness_label":   "Skill Development",
+        "job_readiness_tip": "Take 3 mock tests and review all explanations carefully.",
+    }
+
+
+def generate_copilot_chat_response(profile: dict, user_message: str, history: list) -> str:
+    profile_summary = (
+        f"Candidate: {profile['name']} | Goal: {profile['goal_role']} | "
+        f"Domain: {profile['domain']} | Education: {profile['education']} | "
+        f"Readiness: {profile['readiness']}% | "
+        f"Critical gaps: {', '.join(profile['critical_gaps'][:3]) or 'None'} | "
+        f"Mock avg: {profile['mock_avg']:.1f}% | Interview avg: {profile['interview_avg']:.1f}/10"
+    )
+    system = (
+        f"You are an AI Career Copilot — a personal mentor for this candidate.\n"
+        f"Profile: {profile_summary}\n\n"
+        "Rules:\n"
+        "- Answer ONLY career, learning, skill, or job-related questions\n"
+        "- Always reference their actual data (scores, gaps, role) in your answers\n"
+        "- Be direct, specific, and actionable — no vague platitudes\n"
+        "- If they ask what to study, pick from their actual critical gaps\n"
+        "- If they ask about jobs, factor in their current readiness score\n"
+        "- Keep responses under 150 words unless they ask for detail\n"
+        "- End every response with one concrete next action"
+    )
+    messages = [{"role": "system", "content": system}]
+    messages += history[-10:]
+    messages.append({"role": "user", "content": user_message})
+    return safe_llm_call(MCQ_MODEL, messages, temperature=0.4) or \
+           "I couldn't generate a response. Please try again."
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ████████████████████  AI CAREER COPILOT — PAGE  ████████████████████████████
+# ══════════════════════════════════════════════════════════════════════════════
+
+if page == "🤖 AI Career Copilot":
+
+    st.session_state.current_feature = "AI_Career_Copilot"
+
+    st.markdown("""
+    <div style="padding: 8px 0 4px 0;">
+        <h1 style="margin:0; font-size:2em;">🤖 AI Career Copilot</h1>
+        <p style="color:#64748b; margin:4px 0 0 0; font-size:0.95em;">
+            Your personal AI mentor — connects Skill Intelligence, Mock Tests,
+            Interview Simulator &amp; Learning Agent into one career operating system.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    st.divider()
+
+    # ── SETUP FORM ──────────────────────────────────────────────────────────
+    if not st.session_state.get("copilot_started"):
+
+        st.markdown("### 👤 Set Up Your Career Copilot")
+        st.caption(
+            "Answer a few questions. The Copilot pulls your results from "
+            "all SkillForge modules and generates your personalised plan."
+        )
+        st.markdown("")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            cp_name = st.text_input("Your Full Name",  key="cp_name_input",
+                          placeholder="Used to pull your test history")
+            cp_goal = st.text_input("Target Role",     key="cp_goal_input",
+                          placeholder="e.g. Data Scientist, Backend Engineer")
+        with col2:
+            cp_edu  = st.text_input("Education Level", key="cp_edu_input",
+                          placeholder="e.g. B.Tech, MBA, Self-taught")
+            cp_exp  = st.selectbox("Experience Level",
+                          ["Fresher","1-2 Years","3-5 Years","5+ Years"])
+
+        cp_skills = st.text_input("Your Current Skills (comma-separated)",
+                        placeholder="python, sql, machine learning, excel…")
+
+        st.markdown("")
+        with st.expander("🔍 What data does the Copilot collect?", expanded=False):
+            st.markdown("""
+| Module | Data Used |
+|--------|-----------|
+| 🔎 Skill Intelligence | Skill gaps, role domain, readiness score |
+| 🎓 Mock Assessment | Average score, trend, number of tests |
+| 🎤 Interview Simulator | Round scores, average performance |
+| 🤖 AI Learning Agent | Module completion, mastery scores, topics |
+            """)
+
+        st.markdown("")
+        if st.button("🚀 Activate My Career Copilot", use_container_width=True):
+            if not cp_name or not cp_goal or not cp_skills:
+                st.warning("⚠️ Please fill in Name, Target Role, and Skills.")
+            else:
+                if not check_request_limit(): st.stop()
+                skills_clean = normalize_skills(cp_skills)
+                if not skills_clean:
+                    st.warning("⚠️ No valid skills detected."); st.stop()
+
+                with st.spinner("🧠 Connecting all your SkillForge data…"):
+                    domain        = detect_domain_cached(tuple(skills_clean)) or "Technology"
+                    gaps          = detect_skill_gaps_cached(tuple(skills_clean), cp_goal, domain)
+                    mock_hist     = analyze_user_trend(cp_name) or {
+                        "average": 0, "latest": 0, "trend": "no data", "total_tests": 0
+                    }
+                    interview_hist = _load_interview_history(cp_name)
+                    agent_hist     = _load_agent_history(cp_name)
+
+                with st.spinner("⚡ Building your career profile…"):
+                    profile = build_career_profile(
+                        name=cp_name, goal_role=cp_goal, domain=domain,
+                        education=cp_edu, skills=skills_clean,
+                        skill_gaps=gaps, mock_history=mock_hist,
+                        interview_history=interview_hist, agent_history=agent_hist,
+                    )
+
+                with st.spinner("🤖 Generating your personalised weekly plan…"):
+                    guidance = generate_copilot_guidance(profile)
+
+                st.session_state.copilot_started   = True
+                st.session_state.copilot_profile   = profile
+                st.session_state.copilot_guidance  = guidance
+                st.session_state.copilot_chat_msgs = []
+                st.session_state.current_user      = cp_name
+
+                save_copilot_profile([
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    cp_name, cp_goal, domain, cp_edu, cp_exp,
+                    ", ".join(skills_clean),
+                    profile["readiness"],
+                    guidance.get("readiness_label", ""),
+                    guidance.get("next_milestone", ""),
+                    json.dumps(profile["critical_gaps"]),
+                    json.dumps(guidance.get("weekly_plan", [])),
+                ])
+                st.rerun()
+
+    # ── ACTIVE DASHBOARD ────────────────────────────────────────────────────
+    else:
+        profile  = st.session_state.copilot_profile
+        guidance = st.session_state.copilot_guidance
+
+        name_cp   = profile["name"]
+        goal_cp   = profile["goal_role"]
+        domain_cp = profile["domain"]
+        readiness = profile["readiness"]
+
+        tab_dash, tab_plan, tab_gaps, tab_chat, tab_reset = st.tabs([
+            "🏠 Dashboard", "📅 Weekly Plan", "🔍 Gap Analysis", "💬 Ask Copilot", "🔄 Reset",
+        ])
+
+        # ═══════════════ DASHBOARD ══════════════════════════
+        with tab_dash:
+            hour     = datetime.now().hour
+            greeting = "Good morning" if hour < 12 else "Good afternoon" if hour < 17 else "Good evening"
+            ring_color = "#22c55e" if readiness >= 75 else "#f59e0b" if readiness >= 50 else "#ef4444"
+
+            st.markdown(f"""
+            <div style="background:linear-gradient(135deg,rgba(99,102,241,0.2),rgba(59,130,246,0.12));
+                 border:1px solid rgba(99,102,241,0.3);border-radius:18px;padding:24px 28px;margin-bottom:20px;">
+                <h2 style="margin:0 0 4px 0;">{greeting}, {name_cp} 👋</h2>
+                <p style="color:#94a3b8;margin:0;">
+                    Your AI Career Copilot is active · Goal: <strong style="color:#a5b4fc;">{goal_cp}</strong>
+                    &nbsp;·&nbsp; Domain: <strong style="color:#60a5fa;">{domain_cp}</strong>
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+
+            c1, c2, c3, c4 = st.columns(4)
+            with c1: st.metric("🎯 Career Readiness", f"{readiness}%",
+                               delta=profile["mock_trend"])
+            with c2: st.metric("🎓 Mock Test Avg",    f"{profile['mock_avg']:.1f}%",
+                               delta=f"{profile['mock_tests']} tests")
+            with c3: st.metric("🎤 Interview Avg",
+                               f"{profile['interview_avg']:.1f}/10" if profile['interview_avg'] else "No data",
+                               delta=f"{profile['interview_rounds']} rounds")
+            with c4: st.metric("📚 Modules Mastered",  f"{profile['learning_modules']}",
+                               delta=f"Avg {profile['learning_avg']:.0f}%")
+
+            st.markdown("")
+            stage = guidance.get("readiness_label", "Skill Development")
+            st.markdown(
+                f'<div style="background:rgba(255,255,255,0.06);border-radius:10px;padding:5px;margin-bottom:4px;">'
+                f'<div style="background:{ring_color};width:{readiness}%;height:14px;border-radius:8px;"></div></div>'
+                f'<p style="color:{ring_color};font-weight:700;font-size:0.9em;margin:0 0 20px 0;">'
+                f'🏷️ Stage: {stage} — {readiness}% career readiness</p>',
+                unsafe_allow_html=True,
+            )
+
+            next_milestone = guidance.get("next_milestone", "")
+            if next_milestone:
+                st.markdown(f"""
+                <div class="milestone-box">
+                    <h4>🎯 Next Milestone</h4>
+                    <p>{next_milestone}</p>
+                </div>
+                """, unsafe_allow_html=True)
+                st.markdown("")
+
+            col_s, col_f = st.columns(2)
+            with col_s:
+                st.markdown("##### ✅ What's Going Well")
+                for s in guidance.get("strengths", []):
+                    st.markdown(f'<span class="strength-pill">✓ {s}</span>', unsafe_allow_html=True)
+                st.markdown("")
+            with col_f:
+                st.markdown("##### 🎯 Where to Focus")
+                for f_item in guidance.get("focus_areas", []):
+                    st.markdown(f"• {f_item}")
+
+            motivation = guidance.get("motivation", "")
+            if motivation:
+                st.markdown("")
+                st.info(f"💬 **Copilot says:** {motivation}")
+
+            tip = guidance.get("job_readiness_tip", "")
+            if tip:
+                st.markdown(f"**🚀 Fastest path to job offers:** {tip}")
+
+            st.divider()
+            st.markdown("#### ⚡ Quick Actions")
+            st.caption("Jump directly to the tool your Copilot recommends most:")
+            qa1, qa2, qa3, qa4 = st.columns(4)
+            with qa1:
+                if st.button("📝 Take Mock Test",     use_container_width=True):
+                    st.info("👉 Navigate to **🎓 Mock Assessment** in the sidebar.")
+            with qa2:
+                if st.button("🎤 Practice Interview", use_container_width=True):
+                    st.info("👉 Navigate to **🎤 AI Interview Simulator** in the sidebar.")
+            with qa3:
+                if st.button("📚 Study a Topic",      use_container_width=True):
+                    if profile["critical_gaps"]:
+                        st.info(f"👉 Go to **🤖 AI Learning Agent** → study: **{profile['critical_gaps'][0]}**")
+                    else:
+                        st.info("👉 Navigate to **📚 Guided Study Chat** in the sidebar.")
+            with qa4:
+                if st.button("💼 Find Jobs",           use_container_width=True):
+                    st.info("👉 Navigate to **💼 AI Job Finder** in the sidebar.")
+
+        # ═══════════════ WEEKLY PLAN ════════════════════════
+        with tab_plan:
+            st.markdown("### 📅 Your AI-Generated Weekly Plan")
+            st.caption(f"Personalised for **{name_cp}** targeting **{goal_cp}** at **{readiness}%** readiness.")
+            st.markdown("")
+
+            TYPE_ICONS = {
+                "study":    ("📖", "#6366f1"),
+                "practice": ("⚡", "#f59e0b"),
+                "build":    ("🔨", "#22c55e"),
+                "apply":    ("🚀", "#ec4899"),
+            }
+
+            for task in guidance.get("weekly_plan", []):
+                t_type = task.get("type","study").lower()
+                icon, _ = TYPE_ICONS.get(t_type, ("📌", "#3b82f6"))
+                st.markdown(f"""
+                <div class="task-card {t_type}">
+                    <div class="task-day">{task.get('day','')}</div>
+                    <div class="task-text">{icon} {task.get('task','')}</div>
+                    <div class="task-why">💡 {task.get('why','')} &nbsp;·&nbsp;
+                         <span class="task-dur">⏱ {task.get('duration','')}</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            st.markdown("")
+            st.divider()
+            if st.button("🔄 Regenerate Weekly Plan", use_container_width=False):
+                if not check_request_limit(): st.stop()
+                with st.spinner("🤖 Generating a fresh weekly plan…"):
+                    new_guidance = generate_copilot_guidance(profile)
+                st.session_state.copilot_guidance = new_guidance
+                st.success("✅ Weekly plan refreshed!")
+                st.rerun()
+
+        # ═══════════════ GAP ANALYSIS ═══════════════════════
+        with tab_gaps:
+            st.markdown("### 🔍 Integrated Gap Analysis")
+            st.caption(f"Skill gaps for **{goal_cp}** combined with your performance data.")
+            st.markdown("")
+
+            critical_gaps  = profile.get("critical_gaps",  [])
+            important_gaps = profile.get("important_gaps", [])
+
+            if critical_gaps:
+                st.markdown("#### 🔴 Critical Gaps — Address Immediately")
+                st.markdown(
+                    " ".join(f'<span class="gap-pill">⚠ {g}</span>' for g in critical_gaps),
+                    unsafe_allow_html=True,
+                )
+                st.markdown("")
+                st.markdown("**🤖 Copilot recommends:**")
+                for gap in critical_gaps:
+                    with st.expander(f"How to close: {gap}"):
+                        col_a, col_b, col_c = st.columns(3)
+                        with col_a:
+                            st.markdown("**📚 Study it**")
+                            st.caption(f"AI Learning Agent → topic: {gap}")
+                        with col_b:
+                            st.markdown("**📝 Test yourself**")
+                            st.caption(f"Mock Assessment → add {gap} to skills")
+                        with col_c:
+                            st.markdown("**🎤 Interview prep**")
+                            st.caption(f"Interview Simulator → technical round")
+
+            if important_gaps:
+                st.markdown("#### 🟡 Important Gaps — Plan This Month")
+                st.markdown(
+                    " ".join(
+                        f'<span style="display:inline-block;background:rgba(245,158,11,0.15);'
+                        f'border:1px solid rgba(245,158,11,0.3);border-radius:20px;'
+                        f'padding:4px 12px;font-size:0.8em;color:#fcd34d;margin:3px;font-weight:500;">○ {g}</span>'
+                        for g in important_gaps
+                    ),
+                    unsafe_allow_html=True,
+                )
+                st.markdown("")
+
+            if not critical_gaps and not important_gaps:
+                st.success("✅ No critical or important gaps detected. Focus on advanced skills and interview prep.")
+
+            st.divider()
+            st.markdown("#### 📊 Performance vs Gap Coverage")
+
+            metrics_data = {
+                "Mock Test Readiness":  int(min(profile["mock_avg"],         100)),
+                "Interview Readiness":  int(min(profile["interview_avg"]*10, 100)),
+                "Learning Progress":    int(min(profile["learning_avg"],     100)),
+                "Career Readiness":     readiness,
+            }
+            col_m1, col_m2 = st.columns(2)
+            for idx, (label, val) in enumerate(metrics_data.items()):
+                col = col_m1 if idx % 2 == 0 else col_m2
+                bar_c = "#22c55e" if val >= 75 else "#f59e0b" if val >= 50 else "#ef4444"
+                with col:
+                    st.markdown(f"**{label}** — {val}%")
+                    st.markdown(
+                        f'<div style="background:rgba(255,255,255,0.07);border-radius:8px;padding:3px;margin-bottom:14px;">'
+                        f'<div style="background:{bar_c};width:{val}%;height:8px;border-radius:6px;"></div></div>',
+                        unsafe_allow_html=True,
+                    )
+
+            topics_studied = profile.get("learning_topics", [])
+            if topics_studied:
+                st.divider()
+                st.markdown("#### 📚 Topics You've Already Studied")
+                for t in topics_studied:
+                    st.markdown(f"✅ {t}")
+
+        # ═══════════════ CHAT ════════════════════════════════
+        with tab_chat:
+            st.markdown("### 💬 Ask Your Career Copilot")
+            st.caption(
+                "Ask anything about your career, skills, what to study, "
+                "interview prep, or how to improve scores. "
+                "The Copilot answers using **your actual data**."
+            )
+            st.markdown("")
+
+            if "copilot_chat_msgs" not in st.session_state:
+                st.session_state.copilot_chat_msgs = []
+
+            if not st.session_state.copilot_chat_msgs:
+                st.markdown("**💡 Suggested questions:**")
+                sugg_cols = st.columns(2)
+                suggestions = [
+                    "What should I study this week?",
+                    f"Am I ready to apply for {goal_cp} roles?",
+                    "What's my biggest weakness right now?",
+                    "How do I improve my mock test score?",
+                ]
+                for i, sugg in enumerate(suggestions):
+                    col = sugg_cols[i % 2]
+                    with col:
+                        if st.button(sugg, key=f"sugg_{i}", use_container_width=True):
+                            if not check_request_limit(): st.stop()
+                            with st.spinner("🤖 Copilot is thinking…"):
+                                resp = generate_copilot_chat_response(
+                                    profile, sugg, st.session_state.copilot_chat_msgs
+                                )
+                            st.session_state.copilot_chat_msgs.append({"role":"user","content":sugg})
+                            st.session_state.copilot_chat_msgs.append({"role":"assistant","content":resp})
+                            st.rerun()
+
+            for msg in st.session_state.copilot_chat_msgs:
+                with st.chat_message(msg["role"]):
+                    st.markdown(msg["content"])
+
+            user_q = st.chat_input("Ask your Career Copilot anything…")
+            if user_q:
+                if not check_request_limit(): st.stop()
+                st.session_state.copilot_chat_msgs.append({"role":"user","content":user_q})
+                with st.spinner("🤖 Copilot is thinking…"):
+                    resp = generate_copilot_chat_response(
+                        profile, user_q, st.session_state.copilot_chat_msgs
+                    )
+                st.session_state.copilot_chat_msgs.append({"role":"assistant","content":resp})
+                st.rerun()
+
+            if st.session_state.copilot_chat_msgs:
+                if st.button("🗑️ Clear Chat", use_container_width=False):
+                    st.session_state.copilot_chat_msgs = []
+                    st.rerun()
+
+        # ═══════════════ RESET ══════════════════════════════
+        with tab_reset:
+            st.markdown("### 🔄 Refresh Your Copilot")
+            st.info(
+                "Your Copilot profile is saved. Click **Refresh** to re-run the full "
+                "analysis and pick up new mock tests, interviews, or learning progress."
+            )
+
+            st.markdown("**Current Snapshot:**")
+            snap = {
+                "Name":             profile["name"],
+                "Goal Role":        profile["goal_role"],
+                "Career Readiness": f"{profile['readiness']}%",
+                "Stage":            guidance.get("readiness_label","—"),
+                "Critical Gaps":    ", ".join(profile["critical_gaps"]) or "None",
+                "Mock Avg":         f"{profile['mock_avg']:.1f}%",
+                "Interview Avg":    f"{profile['interview_avg']:.1f}/10",
+                "Learning Modules": str(profile["learning_modules"]),
+            }
+            for k, v in snap.items():
+                st.markdown(f"**{k}:** {v}")
+
+            st.markdown("")
+            col_r1, col_r2 = st.columns(2)
+            with col_r1:
+                if st.button("🔁 Refresh Copilot (Keep Profile)", use_container_width=True):
+                    if not check_request_limit(): st.stop()
+                    with st.spinner("🔄 Re-fetching all module data…"):
+                        mock_hist_r      = analyze_user_trend(profile["name"]) or {}
+                        interview_hist_r = _load_interview_history(profile["name"])
+                        agent_hist_r     = _load_agent_history(profile["name"])
+                        new_profile = build_career_profile(
+                            name=profile["name"], goal_role=profile["goal_role"],
+                            domain=profile["domain"], education=profile["education"],
+                            skills=profile["skills"],
+                            skill_gaps=detect_skill_gaps_cached(
+                                tuple(profile["skills"]), profile["goal_role"], profile["domain"]
+                            ),
+                            mock_history=mock_hist_r,
+                            interview_history=interview_hist_r,
+                            agent_history=agent_hist_r,
+                        )
+                    with st.spinner("🤖 Updating your weekly plan…"):
+                        new_guidance = generate_copilot_guidance(new_profile)
+                    st.session_state.copilot_profile  = new_profile
+                    st.session_state.copilot_guidance = new_guidance
+                    st.success("✅ Copilot refreshed with latest data!")
+                    st.rerun()
+            with col_r2:
+                if st.button("🗑️ Reset Copilot Completely", use_container_width=True):
+                    for k in ["copilot_started","copilot_profile","copilot_guidance","copilot_chat_msgs"]:
+                        st.session_state.pop(k, None)
+                    st.rerun()
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # ██████████████████████  SKILL INTELLIGENCE  ██████████████████████████████
 # ══════════════════════════════════════════════════════════════════════════════
 
-if page == "🔎 Skill Intelligence":
+elif page == "🔎 Skill Intelligence":
 
     st.session_state.current_feature = "Skill_Intelligence"
 
@@ -1372,7 +1916,7 @@ if page == "🔎 Skill Intelligence":
 
         skills = normalize_skills(skills_input)
         if not skills and skills_input.strip():
-            st.warning("⚠️ No valid skills detected. Use comma-separated names."); st.stop()
+            st.warning("⚠️ No valid skills detected."); st.stop()
         if not skills:
             st.warning("⚠️ Please enter at least one skill."); st.stop()
         if len(skills) == MAX_SKILLS:
@@ -1380,76 +1924,49 @@ if page == "🔎 Skill Intelligence":
 
         skills_tuple = tuple(skills)
 
-        with st.spinner("🔍 Detecting career domain…"):
-            domain = detect_domain_cached(skills_tuple) or "General Domain"
-        with st.spinner("🎯 Inferring best-fit role…"):
-            role = infer_role_cached(skills_tuple, domain) or "Specialist"
-        with st.spinner("📈 Building growth plan…"):
-            growth = generate_growth(role, domain, education) or []
-        with st.spinner("🎓 Finding certifications…"):
-            certifications = generate_certifications(role, domain) or []
-        with st.spinner("🌍 Analyzing market outlook…"):
-            market = generate_market(role, domain, education) or "Market data unavailable."
-        with st.spinner("💡 Evaluating career confidence…"):
-            confidence = generate_confidence(role, domain, education)
-        with st.spinner("🌐 Loading learning platforms…"):
-            platforms = generate_platforms(role, domain, skills) or {"free": [], "paid": []}
-        with st.spinner("⏳ Estimating learning timeline…"):
-            weeks = generate_timeline(role, domain, growth, hours)
-        with st.spinner("🔍 Detecting skill gaps…"):
-            gaps = detect_skill_gaps_cached(skills_tuple, role, domain)
-        with st.spinner("🗓️ Generating week-by-week roadmap…"):
-            roadmap = generate_learning_roadmap_cached(role, domain, tuple(growth), hours, weeks) if growth else []
+        with st.spinner("🔍 Detecting career domain…"):        domain         = detect_domain_cached(skills_tuple) or "General Domain"
+        with st.spinner("🎯 Inferring best-fit role…"):        role           = infer_role_cached(skills_tuple, domain) or "Specialist"
+        with st.spinner("📈 Building growth plan…"):           growth         = generate_growth(role, domain, education) or []
+        with st.spinner("🎓 Finding certifications…"):         certifications = generate_certifications(role, domain) or []
+        with st.spinner("🌍 Analyzing market outlook…"):       market         = generate_market(role, domain, education) or "Market data unavailable."
+        with st.spinner("💡 Evaluating career confidence…"):   confidence     = generate_confidence(role, domain, education)
+        with st.spinner("🌐 Loading learning platforms…"):     platforms      = generate_platforms(role, domain, skills) or {"free":[],"paid":[]}
+        with st.spinner("⏳ Estimating learning timeline…"):   weeks          = generate_timeline(role, domain, growth, hours)
+        with st.spinner("🔍 Detecting skill gaps…"):           gaps           = detect_skill_gaps_cached(skills_tuple, role, domain)
+        with st.spinner("🗓️ Generating week-by-week roadmap…"): roadmap       = generate_learning_roadmap_cached(role, domain, tuple(growth), hours, weeks) if growth else []
 
-        # ── Parse confidence ─────────────────────────────────
         confidence_value = 70; risk_value = "Medium"; summary_value = "Moderate job outlook."
         if isinstance(confidence, str):
-            cm = re.search(r"(\d+)%",                      confidence)
-            rm = re.search(r"Risk:\s*(Low|Medium|High)",   confidence)
-            sm = re.search(r"Summary:\s*(.*)",             confidence)
+            cm = re.search(r"(\d+)%",                    confidence)
+            rm = re.search(r"Risk:\s*(Low|Medium|High)", confidence)
+            sm = re.search(r"Summary:\s*(.*)",           confidence)
             if cm: confidence_value = int(cm.group(1))
             if rm: risk_value       = rm.group(1)
             if sm: summary_value    = sm.group(1)
 
-        # ── Career readiness score ────────────────────────────
         skill_score  = min(len(skills) * 10, 40)
         growth_score = max(0, 30 - (len(growth) * 5))
         market_score = round((min(confidence_value, 100) / 100) * 30)
         total_score  = skill_score + growth_score + market_score
 
-        skill_msg  = ("Strong skill foundation."
-                      if skill_score >= 30 else
-                      "Good start — add 2-3 more core skills.")
-        growth_msg = ("Minimal skill gaps — close to market-ready."
-                      if growth_score >= 20 else
-                      "Several growth skills recommended — focus on top 2-3 first.")
-        market_msg = ("Market demand is strong for this role."
-                      if market_score >= 22 else
-                      "Moderate demand — consider adjacent roles too.")
+        skill_msg  = "Strong skill foundation." if skill_score >= 30 else "Good start — add 2-3 more core skills."
+        growth_msg = "Minimal skill gaps — close to market-ready." if growth_score >= 20 else "Several growth skills recommended — focus on top 2-3 first."
+        market_msg = "Market demand is strong for this role." if market_score >= 22 else "Moderate demand — consider adjacent roles too."
 
-        # ══════════════════════════════════════════════════════
-        # TABS  (5 now — Skill Gap added)
-        # ══════════════════════════════════════════════════════
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
-            "🎯 Role Alignment",
-            "📈 Growth Plan",
-            "🎓 Certifications",
-            "🌍 Market Outlook",
-            "🔍 Skill Gap",
+            "🎯 Role Alignment", "📈 Growth Plan", "🎓 Certifications", "🌍 Market Outlook", "🔍 Skill Gap",
         ])
 
-        # ── TAB 1: ROLE ALIGNMENT ─────────────────────────────
         with tab1:
             st.header(role)
             st.markdown(f"🧭 **Domain:** `{domain}`  &nbsp;&nbsp; 🎓 **Education:** `{education}`")
             st.divider()
-
             st.markdown("### 🏆 Career Readiness Scorecard")
             c1, c2, c3, c4 = st.columns(4)
-            with c1: st.metric("Overall Readiness",  f"{total_score}/100")
-            with c2: st.metric("Skill Strength",      f"{skill_score}/40")
-            with c3: st.metric("Growth Gap",          f"{growth_score}/30")
-            with c4: st.metric("Market Demand",       f"{market_score}/30")
+            with c1: st.metric("Overall Readiness", f"{total_score}/100")
+            with c2: st.metric("Skill Strength",    f"{skill_score}/40")
+            with c3: st.metric("Growth Gap",        f"{growth_score}/30")
+            with c4: st.metric("Market Demand",     f"{market_score}/30")
 
             bar_color = "#22c55e" if total_score >= 75 else "#f59e0b" if total_score >= 50 else "#ef4444"
             st.markdown(f"""
@@ -1457,12 +1974,9 @@ if page == "🔎 Skill Intelligence":
                     <div style="background:{bar_color};width:{total_score}%;height:12px;border-radius:8px;"></div>
                 </div>""", unsafe_allow_html=True)
 
-            if total_score >= 75:
-                st.success("✅ **Strong Profile** — You are well-positioned for this role.")
-            elif total_score >= 50:
-                st.warning("⚠️ **Developing Profile** — Targeted improvements will boost your chances significantly.")
-            else:
-                st.error("❌ **Early Stage** — Build core skills before applying for this role.")
+            if   total_score >= 75: st.success("✅ **Strong Profile** — You are well-positioned for this role.")
+            elif total_score >= 50: st.warning("⚠️ **Developing Profile** — Targeted improvements will boost your chances.")
+            else:                   st.error("❌ **Early Stage** — Build core skills before applying.")
 
             st.divider()
             st.markdown("### 📌 Score Breakdown")
@@ -1495,119 +2009,85 @@ if page == "🔎 Skill Intelligence":
                 st.info("2. **Add 2-3 more skills** relevant to your target domain.")
                 st.info("3. **Revisit this analysis** after 4-6 weeks of focused learning.")
 
-        # ── TAB 2: GROWTH PLAN + ROADMAP ──────────────────────
         with tab2:
             st.markdown("### 📈 Recommended Growth Skills")
             st.caption(f"Based on **{role}** in **{domain}** with **{education}** background")
-
             if growth:
                 for idx, skill in enumerate(growth, 1):
                     st.markdown(f"**{idx}.** {skill}")
-
                 st.divider()
                 st.markdown("### ⏳ Estimated Learning Timeline")
                 st.markdown(f"At **{hours} hours/week**, you can cover these skills in approximately:")
                 st.metric("Estimated Timeline", f"~{weeks} weeks")
-                st.caption("Based on your weekly hours and skill complexity.")
-
-                # UP-1: Week-by-week roadmap
                 st.divider()
                 st.markdown("### 🗓️ Week-by-Week Learning Roadmap")
-
                 if roadmap:
                     for w in roadmap:
-                        wn        = w.get("week", "")
-                        focus     = w.get("focus", "")
-                        topics    = w.get("topics", [])
-                        resource  = w.get("resource", "")
-                        milestone = w.get("milestone", "")
-
-                        with st.expander(f"📅 Week {wn} — {focus}"):
-                            if topics:
+                        with st.expander(f"📅 Week {w.get('week','')} — {w.get('focus','')}"):
+                            if w.get("topics"):
                                 st.markdown("**Topics to cover:**")
-                                for t in topics:
-                                    st.markdown(f"  - {t}")
-                            if resource:
-                                st.markdown(f"**Recommended resource:** {resource}")
-                            if milestone:
-                                st.markdown(f"**✅ Milestone:** {milestone}")
+                                for t in w["topics"]: st.markdown(f"  - {t}")
+                            if w.get("resource"):   st.markdown(f"**Recommended resource:** {w['resource']}")
+                            if w.get("milestone"):  st.markdown(f"**✅ Milestone:** {w['milestone']}")
                 else:
                     st.info("Roadmap unavailable — try again or check your skills input.")
             else:
                 st.info("No growth skill recommendations available.")
 
-        # ── TAB 3: CERTIFICATIONS ─────────────────────────────
         with tab3:
             st.markdown("### 🎓 Recommended Certifications")
-            st.caption(f"Globally recognized certifications for **{role}**")
             if certifications:
                 for cert in certifications: st.markdown(f"- {cert}")
             else:
                 st.info("No certifications available.")
-
             st.divider()
             st.markdown("### 🌐 Learning Platforms")
             cf, cp = st.columns(2)
             with cf:
                 st.markdown("#### 🆓 Free Platforms")
-                for item in platforms.get("free", []):
-                    st.markdown(f"- [{item['name']}]({item['url']})")
+                for item in platforms.get("free", []): st.markdown(f"- [{item['name']}]({item['url']})")
                 if not platforms.get("free"): st.caption("None listed.")
             with cp:
                 st.markdown("#### 💼 Paid / Industry Recognized")
-                for item in platforms.get("paid", []):
-                    st.markdown(f"- [{item['name']}]({item['url']})")
+                for item in platforms.get("paid", []): st.markdown(f"- [{item['name']}]({item['url']})")
                 if not platforms.get("paid"): st.caption("None listed.")
 
-        # ── TAB 4: MARKET OUTLOOK ─────────────────────────────
         with tab4:
             st.markdown("### 🌍 Market Outlook")
             st.caption(f"Demand analysis for **{role}** in **{domain}** — **{education}** level")
             st.markdown(market)
 
-        # ── TAB 5: SKILL GAP ANALYSIS (UP-2) ─────────────────
         with tab5:
             st.markdown("### 🔍 Skill Gap Analysis")
             st.caption(f"Your skills vs requirements for **{role}** in **{domain}**")
-
             if gaps:
                 have    = [g for g in gaps if g.get("status") == "Have"]
                 missing = [g for g in gaps if g.get("status") == "Missing"]
                 partial = [g for g in gaps if g.get("status") == "Partial"]
-
                 c1, c2, c3 = st.columns(3)
                 with c1: st.metric("✅ Skills You Have",  len(have))
                 with c2: st.metric("❌ Missing Skills",   len(missing))
                 with c3: st.metric("⚠️ Partial Skills",   len(partial))
-
                 st.divider()
 
-                critical  = [g for g in gaps if g.get("priority") == "Critical"       and g.get("status") != "Have"]
-                important = [g for g in gaps if g.get("priority") == "Important"      and g.get("status") != "Have"]
-                nice      = [g for g in gaps if g.get("priority") == "Nice to Have"   and g.get("status") != "Have"]
+                critical  = [g for g in gaps if g.get("priority") == "Critical"     and g.get("status") != "Have"]
+                important = [g for g in gaps if g.get("priority") == "Important"    and g.get("status") != "Have"]
+                nice      = [g for g in gaps if g.get("priority") == "Nice to Have" and g.get("status") != "Have"]
 
                 if critical:
                     st.markdown("#### 🔴 Critical Gaps (Must Learn)")
-                    for g in critical:
-                        st.error(f"**{g['skill']}** — {g.get('reason','')}")
-
+                    for g in critical: st.error(f"**{g['skill']}** — {g.get('reason','')}")
                 if important:
                     st.markdown("#### 🟡 Important Gaps")
-                    for g in important:
-                        st.warning(f"**{g['skill']}** — {g.get('reason','')}")
-
+                    for g in important: st.warning(f"**{g['skill']}** — {g.get('reason','')}")
                 if nice:
                     st.markdown("#### 🟢 Nice to Have")
-                    for g in nice:
-                        st.info(f"**{g['skill']}** — {g.get('reason','')}")
-
+                    for g in nice: st.info(f"**{g['skill']}** — {g.get('reason','')}")
                 if have:
                     st.divider()
                     st.markdown("#### ✅ Skills You Already Have")
-                    for g in have:
-                        st.success(f"**{g['skill']}** — {g.get('reason','')}")
+                    for g in have: st.success(f"**{g['skill']}** — {g.get('reason','')}")
 
-                # Overall gap readiness bar
                 if gaps:
                     have_pct = round(len(have) / len(gaps) * 100)
                     st.divider()
@@ -1620,7 +2100,6 @@ if page == "🔎 Skill Intelligence":
             else:
                 st.info("Skill gap data unavailable. Try refreshing the analysis.")
 
-        # ── FEEDBACK ──────────────────────────────────────────
         st.divider()
         rating        = st.slider("How useful was this analysis?", 1, 5, 4)
         feedback_text = st.text_area("What can we improve?")
@@ -1668,10 +2147,10 @@ elif page == "🎓 Mock Assessment":
 
     tpq = {"Beginner":12,"Intermediate":24,"Expert":36}
     if test_mode == "Coding Based":
-        half     = mcq_count // 2
-        est_sec  = (half * tpq[difficulty]) + ((mcq_count - half) * tpq[difficulty] * 3)
+        half    = mcq_count // 2
+        est_sec = (half * tpq[difficulty]) + ((mcq_count - half) * tpq[difficulty] * 3)
     else:
-        est_sec  = tpq[difficulty] * mcq_count
+        est_sec = tpq[difficulty] * mcq_count
     st.caption(f"⏱️ Estimated time: ~{round(est_sec/60,1)} min")
 
     if "mock_questions" not in st.session_state:
@@ -1679,7 +2158,6 @@ elif page == "🎓 Mock Assessment":
 
     if st.button("Generate Test"):
         if not check_request_limit(): st.stop()
-
         skills = normalize_skills(skills_input)
         if not skills and skills_input.strip():
             st.warning("⚠️ No valid skills detected."); st.stop()
@@ -1691,9 +2169,9 @@ elif page == "🎓 Mock Assessment":
         if test_mode == "Coding Based":
             half = mcq_count // 2; written_half = mcq_count - half
             with st.spinner(f"Generating {half} coding MCQs…"):
-                mcq_qs = cached_generate_mcqs(stuple, difficulty, "Coding Based", half)   # PERF-1
+                mcq_qs = cached_generate_mcqs(stuple, difficulty, "Coding Based", half)
             with st.spinner(f"Generating {written_half} written questions…"):
-                wr_qs  = cached_generate_written_questions(stuple, difficulty, written_half)  # PERF-1
+                wr_qs  = cached_generate_written_questions(stuple, difficulty, written_half)
 
             if mcq_qs:
                 for q in mcq_qs: q["type"] = "mcq"
@@ -1706,13 +2184,13 @@ elif page == "🎓 Mock Assessment":
                 if mi < len(ml): combined.append(ml[mi]); mi += 1
 
             if combined:
-                st.session_state.mock_questions        = combined
-                st.session_state.written_evaluations   = {}
+                st.session_state.mock_questions      = combined
+                st.session_state.written_evaluations = {}
             else:
                 st.error("Failed to generate coding questions. Try again."); st.stop()
         else:
             with st.spinner("Generating questions…"):
-                questions = cached_generate_mcqs(stuple, difficulty, test_mode, mcq_count)   # PERF-1
+                questions = cached_generate_mcqs(stuple, difficulty, test_mode, mcq_count)
             if questions and isinstance(questions, list):
                 for q in questions: q["type"] = "mcq"
                 st.session_state.mock_questions = questions
@@ -1733,7 +2211,6 @@ elif page == "🎓 Mock Assessment":
         st.session_state.written_total       = 0
         st.session_state.written_score_total = 0
 
-    # ── Display Test ─────────────────────────────────────────
     if st.session_state.get("mock_questions"):
 
         auto_submit     = False
@@ -1761,9 +2238,9 @@ elif page == "🎓 Mock Assessment":
 
                 if qtype == "mcq":
                     mcq_total += 1
-                    selected      = st.session_state.get(f"mock_{i}")
-                    correct_ans   = q.get("answer")
-                    correct_opt   = None
+                    selected    = st.session_state.get(f"mock_{i}")
+                    correct_ans = q.get("answer")
+                    correct_opt = None
                     if isinstance(correct_ans, int):
                         if 0 <= correct_ans < len(q["options"]): correct_opt = q["options"][correct_ans]
                     elif isinstance(correct_ans, str):
@@ -1782,7 +2259,7 @@ elif page == "🎓 Mock Assessment":
 
                 elif qtype == "written":
                     written_total += 1
-                    user_ans       = st.session_state.get(f"written_{i}", "")
+                    user_ans = st.session_state.get(f"written_{i}", "")
                     try:
                         with st.spinner(f"🤖 AI evaluating written Q{i+1}…"):
                             ev = evaluate_written_answer(q["question"], user_ans, difficulty)
@@ -1793,8 +2270,8 @@ elif page == "🎓 Mock Assessment":
                     st.session_state.written_total       = written_total
                     st.session_state.written_score_total = written_score_total
 
-            mcq_pct     = (mcq_score / mcq_total * 100)             if mcq_total     > 0 else 0
-            written_pct = (written_score_total / (written_total*10)*100) if written_total > 0 else 0
+            mcq_pct     = (mcq_score / mcq_total * 100)                       if mcq_total     > 0 else 0
+            written_pct = (written_score_total / (written_total * 10) * 100)  if written_total > 0 else 0
             if mcq_total > 0 and written_total > 0:
                 overall_pct = (mcq_pct + written_pct) / 2
             elif mcq_total > 0:
@@ -1808,7 +2285,6 @@ elif page == "🎓 Mock Assessment":
             st.session_state.pop("start_time", None)
             st.session_state.pop("time_limit",  None)
 
-        # ── Question Loop ────────────────────────────────────
         for i, q in enumerate(st.session_state.mock_questions):
             qtype = q.get("type","mcq")
 
@@ -1816,18 +2292,19 @@ elif page == "🎓 Mock Assessment":
                 st.markdown(f"### ✍️ Q{i+1}. {q['question']}")
                 if q.get("hints"): st.caption(f"💡 Hint: {q['hints']}")
                 if not st.session_state.get("exam_submitted"):
-                    st.text_area("Write your code / answer here:", key=f"written_{i}",
-                                 height=200, placeholder="# Write your solution here…\ndef solution():\n    pass")
+                    st.text_area("Write your code / answer here:", key=f"written_{i}", height=200,
+                                 placeholder="# Write your solution here…\ndef solution():\n    pass")
                 else:
                     ans = st.session_state.get(f"written_{i}","")
                     st.code(ans or "No answer provided.", language="python")
                     ev  = st.session_state.get("written_evaluations",{}).get(i)
                     if ev:
                         sv = ev.get("score",0)
-                        (st.success if sv>=8 else st.warning if sv>=5 else st.error)(f"{'✅' if sv>=8 else '⚠️' if sv>=5 else '❌'} AI Score: {sv}/10")
+                        (st.success if sv>=8 else st.warning if sv>=5 else st.error)(
+                            f"{'✅' if sv>=8 else '⚠️' if sv>=5 else '❌'} AI Score: {sv}/10"
+                        )
                         st.markdown("📘 **Feedback:**"); st.info(ev.get("feedback",""))
                         st.markdown("📗 **Model Answer:**"); st.code(ev.get("model_answer","N/A"), language="python")
-
             else:
                 st.markdown(f"### 🔘 Q{i+1}. {q['question']}")
                 st.radio("", q["options"], index=None, key=f"mock_{i}",
@@ -1861,7 +2338,6 @@ elif page == "🎓 Mock Assessment":
 
             st.divider()
 
-        # ── Result Display ───────────────────────────────────
         if st.session_state.get("exam_submitted"):
             st.markdown("## 📊 Test Result")
             mt = st.session_state.get("mcq_total",0)
@@ -1869,9 +2345,9 @@ elif page == "🎓 Mock Assessment":
 
             if mt > 0 and wt > 0:
                 c1,c2,c3 = st.columns(3)
-                with c1: st.metric("🔘 MCQ Score",     f"{st.session_state.get('final_score',0)}/{mt}",      f"{st.session_state.get('mcq_percent',0):.1f}%")
-                with c2: st.metric("✍️ Written Score",  f"{st.session_state.get('written_score_total',0)}/{wt*10} pts", f"{st.session_state.get('written_percent',0):.1f}%")
-                with c3: st.metric("🏆 Overall Score",  f"{st.session_state.get('final_percent',0):.1f}%")
+                with c1: st.metric("🔘 MCQ Score",    f"{st.session_state.get('final_score',0)}/{mt}", f"{st.session_state.get('mcq_percent',0):.1f}%")
+                with c2: st.metric("✍️ Written Score", f"{st.session_state.get('written_score_total',0)}/{wt*10} pts", f"{st.session_state.get('written_percent',0):.1f}%")
+                with c3: st.metric("🏆 Overall Score", f"{st.session_state.get('final_percent',0):.1f}%")
             else:
                 st.markdown(f"### Score: {st.session_state.get('final_score',0)}/{total_questions}")
                 st.markdown(f"### Percentage: {st.session_state.get('final_percent',0):.2f}%")
@@ -1912,15 +2388,14 @@ elif page == "📚 Guided Study Chat":
         else:
             st.info(f"👋 Hi {candidate_name}! Let's build your expertise 🚀")
 
-    education     = st.text_input("Education Level",
-        placeholder="e.g. 10th Grade, B.Tech, Self-taught, MBA…")
-    topic         = st.text_input("Topic You Want To Study")
-    book_source   = st.text_input("📖 Reference Book / Source (Optional)",
-        placeholder="e.g. NCERT, RD Sharma, HC Verma, CBSE…")
+    education   = st.text_input("Education Level", placeholder="e.g. 10th Grade, B.Tech, Self-taught, MBA…")
+    topic       = st.text_input("Topic You Want To Study")
+    book_source = st.text_input("📖 Reference Book / Source (Optional)",
+                    placeholder="e.g. NCERT, RD Sharma, HC Verma, CBSE…")
     if book_source:
         st.caption(f"📌 Tutor will follow the structure and style of: **{book_source}**")
 
-    level         = st.selectbox("Skill Level", ["Beginner","Intermediate","Expert"])
+    level        = st.selectbox("Skill Level", ["Beginner","Intermediate","Expert"])
     learning_goal = st.text_input("Learning Goal")
 
     if "study_chat_started" not in st.session_state:
@@ -1952,12 +2427,10 @@ elif page == "📚 Guided Study Chat":
                 ])
                 st.session_state.study_chat_started = True
 
-            # PERF-2: Compressed but complete system prompt ─────────
             book_line = (
                 f"Book/Source: {book_source}. Follow its structure, sequence, terminology, "
                 f"and teaching style exactly. Stay within what it covers for this topic."
-                if book_source else
-                "Use standard curriculum knowledge."
+                if book_source else "Use standard curriculum knowledge."
             )
             edu_line = (
                 "Simple language, real-world analogies, examples before theory."
@@ -1967,7 +2440,6 @@ elif page == "📚 Guided Study Chat":
                 else "Precise technical language, skip basics, focus on depth and edge cases."
             )
 
-            # PERF-2: ~10x shorter than original — all key rules preserved
             st.session_state.study_context = (
                 f"Expert tutor. Teach ONLY: {topic}. "
                 f"Level: {level}. Student background: {education}. "
@@ -1978,11 +2450,9 @@ elif page == "📚 Guided Study Chat":
                 "end every reply with one follow-up question or next concept. "
                 f"If asked off-topic, redirect back to {topic}."
             )
-
             st.session_state.study_messages = []
-            st.session_state.study_topic    = topic   # ChromaDB collection key
-            reset_study_memory()           # clear FAISS session index (ChromaDB persists)
-
+            st.session_state.study_topic    = topic
+            reset_study_memory()
         else:
             if not candidate_name: st.warning("⚠️ Please enter your name.")
             elif not education:    st.warning("⚠️ Please enter your education level.")
@@ -1993,17 +2463,15 @@ elif page == "📚 Guided Study Chat":
         st.subheader(f"📘 {topic}" + (f"  |  📖 {book_source}" if book_source else ""))
 
         if VECTOR_MEMORY_AVAILABLE:
-            backend = "ChromaDB (persistent across sessions)" if CHROMA_AVAILABLE else "FAISS (session only)"
-            st.caption(f"🧠 Vector memory active ({backend}) — past context is referenced automatically.")
+            backend = "ChromaDB (persistent)" if CHROMA_AVAILABLE else "FAISS (session only)"
+            st.caption(f"🧠 Vector memory active ({backend}) — past context referenced automatically.")
 
         user_input = st.chat_input("Ask your question about this topic…")
 
         if user_input:
             if not check_request_limit(): st.stop()
-
             st.session_state.study_messages.append({"role":"user","content":user_input})
 
-            # PERF-3: Retrieve relevant past context from FAISS
             system_content = st.session_state.study_context
             if VECTOR_MEMORY_AVAILABLE:
                 memory_ctx = retrieve_memory(user_input)
@@ -2012,10 +2480,8 @@ elif page == "📚 Guided Study Chat":
 
             messages = [{"role":"system","content":system_content}] + st.session_state.study_messages
             response = safe_llm_call(MAIN_MODEL, messages, temperature=0.4)
-
             st.session_state.study_messages.append({"role":"assistant","content":response})
 
-            # PERF-3: Store Q+A in FAISS index
             if VECTOR_MEMORY_AVAILABLE:
                 add_to_memory(user_input, response or "")
 
@@ -2039,7 +2505,7 @@ elif page == "📚 Guided Study Chat":
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ██████████████████████  AI JOB FINDER (PREMIUM)  █████████████████████████
+# ██████████████████████  AI JOB FINDER  ██████████████████████████████████
 # ══════════════════════════════════════════════════════════════════════════════
 
 elif page == "💼 AI Job Finder (Premium)":
@@ -2051,27 +2517,20 @@ elif page == "💼 AI Job Finder (Premium)":
     name = st.text_input("Full Name")
     st.session_state.current_user = name or "Guest"
 
-    age          = st.number_input("Age", min_value=16, max_value=65, step=1)
-    education    = st.text_input("Education Level",
-        placeholder="e.g. B.Tech, MBA, Bootcamp Graduate…")
-    skills_input = st.text_input("Skills (comma-separated)")
-    experience   = st.selectbox("Years of Experience",
-        ["Fresher","1-2 Years","3-5 Years","5+ Years"])
+    age           = st.number_input("Age", min_value=16, max_value=65, step=1)
+    education     = st.text_input("Education Level", placeholder="e.g. B.Tech, MBA, Bootcamp Graduate…")
+    skills_input  = st.text_input("Skills (comma-separated)")
+    experience    = st.selectbox("Years of Experience", ["Fresher","1-2 Years","3-5 Years","5+ Years"])
     current_field = st.text_input("Current Field / Industry")
     target_role   = st.text_input("Target Job Profile You Are Looking For")
 
-    resume_file = st.file_uploader(
-        "Upload Resume (PDF, JPG, PNG supported)",
-        type=["pdf","png","jpg","jpeg"]
-    )
+    resume_file = st.file_uploader("Upload Resume (PDF, JPG, PNG supported)", type=["pdf","png","jpg","jpeg"])
 
-    # UP-7: Job Description paste for match scoring
     st.divider()
     st.markdown("### 📋 Paste a Job Description (Optional — for Match Score)")
     jd_text = st.text_area(
-        "Paste the full job description here",
-        height=160,
-        placeholder="Paste the job description you want to apply for…\nThe AI will compute your skill match score.",
+        "Paste the full job description here", height=160,
+        placeholder="Paste the job description you want to apply for…",
         key="jd_text_input",
     )
     if jd_text:
@@ -2081,7 +2540,6 @@ elif page == "💼 AI Job Finder (Premium)":
     if st.button("🔍 Analyze & Find Jobs", use_container_width=True):
         if name and skills_input and target_role:
             if not check_request_limit(): st.stop()
-
             skills = normalize_skills(skills_input)
             if not skills and skills_input.strip():
                 st.warning("⚠️ No valid skills detected."); st.stop()
@@ -2101,7 +2559,6 @@ elif page == "💼 AI Job Finder (Premium)":
                                 st.success(f"✅ Extracted {len(resume_text.split())} words from PDF.")
                         except Exception as e:
                             resume_text = "PDF extraction failed."; st.warning(f"⚠️ {e}")
-
                     elif resume_file.type in ["image/png","image/jpeg"]:
                         image = Image.open(resume_file)
                         st.image(image, caption="Uploaded Resume", use_column_width=True)
@@ -2109,7 +2566,7 @@ elif page == "💼 AI Job Finder (Premium)":
                             try:
                                 resume_text = pytesseract.image_to_string(image).strip()
                                 if not resume_text:
-                                    resume_text = "No readable text found in image."
+                                    resume_text = "No readable text found."
                                     st.warning("⚠️ No text detected. Try a PDF for best results.")
                                 else:
                                     st.success(f"✅ Extracted {len(resume_text.split())} words via OCR.")
@@ -2119,34 +2576,29 @@ elif page == "💼 AI Job Finder (Premium)":
                             resume_text = "Image uploaded (OCR unavailable)."
                             st.info("💡 Install pytesseract + tesseract-ocr for image text extraction.")
 
-                # ── UP-3: AI Resume Skill Extraction ──────────────
                 extracted_resume_skills = []
                 if resume_text and len(resume_text.strip()) > 50:
                     with st.spinner("🤖 Extracting skills from your resume…"):
                         extracted_resume_skills = extract_skills_from_resume(resume_text)
-
                     if extracted_resume_skills:
                         st.success(f"🎯 **{len(extracted_resume_skills)} skills detected in resume:**")
                         st.write(", ".join(s.title() for s in extracted_resume_skills))
-                        user_set = set(skills)
-                        ext_set  = set(s.lower() for s in extracted_resume_skills)
+                        user_set = set(skills); ext_set = set(s.lower() for s in extracted_resume_skills)
                         new_only = ext_set - user_set
                         if new_only:
-                            st.info(f"➕ **{len(new_only)} additional skills found in resume** (added to analysis): "
+                            st.info(f"➕ **{len(new_only)} additional skills found in resume:** "
                                     f"{', '.join(s.title() for s in sorted(new_only))}")
                         skills = list(user_set | ext_set)
 
                 prompt = f"""
 You are an AI Career Placement Advisor.
-
 Candidate Profile:
 Name: {name} | Age: {age} | Education: {education}
 Skills: {", ".join(skills)} | Experience: {experience}
 Current Field: {current_field} | Target Role: {target_role}
 Resume Content: {resume_text[:2000] if resume_text else "Not provided"}
 
-Analyze compatibility between the candidate and the target role.
-Provide:
+Analyze compatibility between the candidate and the target role. Provide:
 1. Job Fit Score (0-100%)
 2. Strengths
 3. Skill Gaps
@@ -2155,16 +2607,12 @@ Provide:
 6. Suggested Industries
 7. Recommended Job Search Keywords
 """
-                response = safe_llm_call(
-                    "llama-3.3-70b-versatile",
-                    [{"role":"user","content":prompt}],
-                    temperature=0.4
-                )
+                response = safe_llm_call("llama-3.3-70b-versatile",
+                    [{"role":"user","content":prompt}], temperature=0.4)
 
             st.markdown("## 🎯 AI Career Recommendations")
             st.markdown(response)
 
-            # ── UP-7: Job Match Score vs pasted JD ────────────
             if jd_text and jd_text.strip():
                 st.divider()
                 st.markdown("## 🎯 Job Description Match Score")
@@ -2173,37 +2621,30 @@ Provide:
 
                 if match:
                     overall = match["overall_score"]
-                    bar_col = ("#22c55e" if overall >= 75 else
-                               "#f59e0b" if overall >= 55 else
+                    bar_col = ("#22c55e" if overall >= 75 else "#f59e0b" if overall >= 55 else
                                "#f97316" if overall >= 35 else "#ef4444")
-
                     c1, c2, c3 = st.columns(3)
-                    with c1: st.metric("🎯 Overall Match",   f"{overall}%")
-                    with c2: st.metric("🧠 Semantic Score",  f"{match['semantic_score']}%")
-                    with c3: st.metric("🔑 Keyword Score",   f"{match['keyword_score']}%")
+                    with c1: st.metric("🎯 Overall Match",  f"{overall}%")
+                    with c2: st.metric("🧠 Semantic Score", f"{match['semantic_score']}%")
+                    with c3: st.metric("🔑 Keyword Score",  f"{match['keyword_score']}%")
 
                     st.markdown(f"""
 <div style="background:rgba(255,255,255,0.08);border-radius:10px;padding:4px;margin:8px 0 12px 0;">
   <div style="background:{bar_col};width:{overall}%;height:14px;border-radius:8px;"></div>
 </div>""", unsafe_allow_html=True)
 
-                    st.markdown(f"**{match['label']}** — {overall}% alignment between your profile and this job.")
+                    st.markdown(f"**{match['label']}** — {overall}% alignment with this job.")
 
                     col_m, col_miss = st.columns(2)
                     with col_m:
                         st.markdown("#### ✅ Matched Keywords")
-                        if match["matched_keywords"]:
-                            st.success(", ".join(match["matched_keywords"][:15]))
-                        else:
-                            st.caption("No keyword matches found.")
+                        if match["matched_keywords"]: st.success(", ".join(match["matched_keywords"][:15]))
+                        else: st.caption("No keyword matches found.")
                     with col_miss:
-                        st.markdown("#### ❌ Keywords in JD You're Missing")
-                        if match["missing_keywords"]:
-                            st.error(", ".join(match["missing_keywords"][:15]))
-                        else:
-                            st.caption("No major gaps detected.")
+                        st.markdown("#### ❌ Keywords You're Missing")
+                        if match["missing_keywords"]: st.error(", ".join(match["missing_keywords"][:15]))
+                        else: st.caption("No major gaps detected.")
 
-                    # Save match to Sheets
                     save_job_match([
                         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         name, target_role, overall,
@@ -2211,7 +2652,6 @@ Provide:
                         len(match["matched_keywords"]), len(match["missing_keywords"]),
                     ])
 
-            # ── UP-5: Live job cards ───────────────────────────
             st.divider()
             with st.spinner("🔍 Fetching live job listings…"):
                 live_jobs = fetch_real_jobs(target_role, location="India", num=6)
@@ -2222,13 +2662,11 @@ Provide:
             else:
                 enc = target_role.replace(" ", "%20")
                 st.markdown("### 🔗 Search Jobs Directly")
-                if SERPAPI_KEY:
-                    st.warning("⚠️ Live job fetch failed — showing search links instead.")
-                else:
-                    st.info("💡 Set `SERPAPI_KEY` env variable for live job cards. Using search links for now.")
+                if not SERPAPI_KEY:
+                    st.info("💡 Set `SERPAPI_KEY` env variable for live job cards.")
                 st.markdown(f"🔹 [LinkedIn Jobs](https://www.linkedin.com/jobs/search/?keywords={enc})")
                 st.markdown(f"🔹 [Indeed Jobs](https://www.indeed.com/jobs?q={enc})")
-                st.markdown(f"🔹 [Naukri Jobs](https://www.naukri.com/{target_role.replace(' ', '-')}-jobs)")
+                st.markdown(f"🔹 [Naukri Jobs](https://www.naukri.com/{target_role.replace(' ','-')}-jobs)")
                 st.markdown(f"🔹 [Glassdoor Jobs](https://www.glassdoor.com/Job/jobs.htm?sc.keyword={enc})")
         else:
             st.warning("Please fill required fields (Name, Skills, Target Role).")
@@ -2244,31 +2682,22 @@ elif page == "🎤 AI Interview Simulator":
     st.caption("Full mock interview — 5 rounds, real-time AI feedback, scored debrief.")
     st.session_state.current_feature = "Interview_Simulator"
 
-    # ── Setup form ───────────────────────────────────────────
     if not st.session_state.get("interview_started"):
 
         col1, col2 = st.columns(2)
         with col1:
-            iv_name  = st.text_input("Your Full Name", key="iv_name_input")
-            iv_role  = st.text_input("Target Role",
-                placeholder="e.g. Data Scientist, Backend Engineer, Product Manager")
+            iv_name = st.text_input("Your Full Name", key="iv_name_input")
+            iv_role = st.text_input("Target Role", placeholder="e.g. Data Scientist, Backend Engineer")
         with col2:
-            iv_edu   = st.text_input("Education Level",
-                placeholder="e.g. B.Tech, MBA, Self-taught")
-            iv_exp   = st.selectbox("Experience Level",
-                ["Fresher", "1-2 Years", "3-5 Years", "5+ Years"])
+            iv_edu  = st.text_input("Education Level", placeholder="e.g. B.Tech, MBA, Self-taught")
+            iv_exp  = st.selectbox("Experience Level", ["Fresher","1-2 Years","3-5 Years","5+ Years"])
 
-        iv_skills  = st.text_input("Your Skills (comma-separated)")
-        iv_diff    = st.selectbox("Interview Difficulty",
-            ["Beginner", "Intermediate", "Expert"])
+        iv_skills = st.text_input("Your Skills (comma-separated)")
+        iv_diff   = st.selectbox("Interview Difficulty", ["Beginner","Intermediate","Expert"])
 
         rounds_available = [r["label"] for r in INTERVIEW_ROUNDS]
-        iv_rounds  = st.multiselect(
-            "Select Interview Rounds",
-            rounds_available,
-            default=rounds_available[:3],
-            help="Pick 1-5 rounds. They run in sequence.",
-        )
+        iv_rounds = st.multiselect("Select Interview Rounds", rounds_available,
+                        default=rounds_available[:3], help="Pick 1-5 rounds.")
 
         if st.button("🎤 Start Interview", use_container_width=True):
             if not iv_name or not iv_role or not iv_skills:
@@ -2277,51 +2706,44 @@ elif page == "🎤 AI Interview Simulator":
                 st.warning("⚠️ Please select at least one interview round.")
             else:
                 if not check_request_limit(): st.stop()
-
-                skills_clean = normalize_skills(iv_skills)
-                domain_iv    = detect_domain_cached(tuple(skills_clean)) or "Technology"
-
-                # Filter to selected rounds in order
+                skills_clean  = normalize_skills(iv_skills)
+                domain_iv     = detect_domain_cached(tuple(skills_clean)) or "Technology"
                 selected_rounds = [r for r in INTERVIEW_ROUNDS if r["label"] in iv_rounds]
 
-                st.session_state.interview_started    = True
-                st.session_state.iv_name              = iv_name
-                st.session_state.iv_role              = iv_role
-                st.session_state.iv_domain            = domain_iv
-                st.session_state.iv_difficulty        = iv_diff
-                st.session_state.iv_skills            = skills_clean
-                st.session_state.iv_rounds            = selected_rounds
-                st.session_state.interview_round      = 0
-                st.session_state.interview_messages   = []   # flat chat history
-                st.session_state.interview_score_log  = []   # per-answer scores
-                st.session_state.interview_complete   = False
-                st.session_state.interview_q_count    = 0    # questions asked this round
-                st.session_state.current_user         = iv_name
+                st.session_state.interview_started   = True
+                st.session_state.iv_name             = iv_name
+                st.session_state.iv_role             = iv_role
+                st.session_state.iv_domain           = domain_iv
+                st.session_state.iv_difficulty       = iv_diff
+                st.session_state.iv_skills           = skills_clean
+                st.session_state.iv_rounds           = selected_rounds
+                st.session_state.interview_round     = 0
+                st.session_state.interview_messages  = []
+                st.session_state.interview_score_log = []
+                st.session_state.interview_complete  = False
+                st.session_state.interview_q_count   = 0
+                st.session_state.current_user        = iv_name
                 st.rerun()
 
-    # ── Active Interview ──────────────────────────────────────
     else:
-        iv_name    = st.session_state.iv_name
-        iv_role    = st.session_state.iv_role
-        iv_domain  = st.session_state.iv_domain
-        iv_diff    = st.session_state.iv_difficulty
-        iv_skills  = st.session_state.iv_skills
-        rounds     = st.session_state.iv_rounds
-        round_idx  = st.session_state.interview_round
-        messages   = st.session_state.interview_messages
-        score_log  = st.session_state.interview_score_log
-        complete   = st.session_state.interview_complete
+        iv_name   = st.session_state.iv_name
+        iv_role   = st.session_state.iv_role
+        iv_domain = st.session_state.iv_domain
+        iv_diff   = st.session_state.iv_difficulty
+        iv_skills = st.session_state.iv_skills
+        rounds    = st.session_state.iv_rounds
+        round_idx = st.session_state.interview_round
+        messages  = st.session_state.interview_messages
+        score_log = st.session_state.interview_score_log
+        complete  = st.session_state.interview_complete
 
-        # ── Round progress bar ───────────────────────────────
         total_rounds = len(rounds)
         if not complete:
-            prog = round_idx / total_rounds
             st.markdown(f"**Round {round_idx + 1} of {total_rounds} — {rounds[round_idx]['label']}**")
-            st.progress(prog)
+            st.progress(round_idx / total_rounds)
         else:
             st.progress(1.0)
 
-        # ── Sidebar live score ───────────────────────────────
         if score_log:
             avg_live = round(sum(s["score"] for s in score_log) / len(score_log), 1)
             st.sidebar.markdown("---")
@@ -2329,127 +2751,71 @@ elif page == "🎤 AI Interview Simulator":
             st.sidebar.metric("Current Avg", f"{avg_live}/10")
             st.sidebar.caption(f"Based on {len(score_log)} answer(s) scored")
 
-        # ── Generate opening question if round just started ──
-        if (not complete
-                and not messages
-                or (messages and messages[-1]["role"] == "user"
-                    and st.session_state.get("interview_q_count", 0) == 0)):
+        if not complete and not messages:
+            with st.spinner(f"🎤 Preparing {rounds[round_idx]['label']}…"):
+                opening = generate_interview_opening(
+                    iv_role, iv_domain, iv_diff, rounds[round_idx], iv_skills
+                )
+            messages.append({"role":"assistant","content":opening,"round":round_idx})
+            st.session_state.interview_messages = messages
+            st.session_state.interview_q_count  = 1
 
-            if not messages or messages[-1]["role"] == "user":
-                # Only auto-open if no messages yet OR we need the first Q of a new round
-                if not messages:
-                    with st.spinner(f"🎤 Preparing {rounds[round_idx]['label']}…"):
-                        opening = generate_interview_opening(
-                            iv_role, iv_domain, iv_diff,
-                            rounds[round_idx], iv_skills,
-                        )
-                    messages.append({"role": "assistant", "content": opening,
-                                     "round": round_idx})
-                    st.session_state.interview_messages  = messages
-                    st.session_state.interview_q_count   = 1
-
-        # ── Render chat history ──────────────────────────────
         for msg in messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
                 if msg["role"] == "assistant" and msg.get("score") is not None:
                     sc = msg["score"]
                     color = "#22c55e" if sc >= 7 else "#f59e0b" if sc >= 5 else "#ef4444"
-                    st.markdown(
-                        f'<span style="color:{color};font-weight:700;">Score: {sc}/10</span>',
-                        unsafe_allow_html=True,
-                    )
+                    st.markdown(f'<span style="color:{color};font-weight:700;">Score: {sc}/10</span>',
+                                unsafe_allow_html=True)
 
-        # ── Input / controls ─────────────────────────────────
         if not complete:
-
             col_input, col_next = st.columns([5, 1])
-
             with col_input:
-                user_answer = st.chat_input(
-                    "Type your answer here… (or type 'skip' to move on)"
-                )
-
+                user_answer = st.chat_input("Type your answer here… (or type 'skip' to move on)")
             with col_next:
-                next_round_btn = st.button(
-                    "Next Round ➡️",
-                    disabled=(round_idx >= total_rounds - 1),
-                    help="Move to the next interview round",
-                )
+                next_round_btn = st.button("Next Round ➡️", disabled=(round_idx >= total_rounds - 1))
 
-            # Process submitted answer
             if user_answer:
                 if not check_request_limit(): st.stop()
-
-                messages.append({"role": "user", "content": user_answer, "round": round_idx})
-
-                # Don't score 'skip'
+                messages.append({"role":"user","content":user_answer,"round":round_idx})
                 skip = user_answer.strip().lower() == "skip"
 
                 if not skip and messages:
-                    # Find the last interviewer question
-                    last_q = next(
-                        (m["content"] for m in reversed(messages[:-1])
-                         if m["role"] == "assistant"),
-                        "General question"
-                    )
-
+                    last_q = next((m["content"] for m in reversed(messages[:-1]) if m["role"] == "assistant"), "General question")
                     with st.spinner("🤖 Evaluating your answer…"):
-                        ev = evaluate_interview_answer(
-                            last_q, user_answer, iv_role, iv_diff
-                        )
+                        ev = evaluate_interview_answer(last_q, user_answer, iv_role, iv_diff)
 
-                    score = ev.get("score", 0)
+                    score     = ev.get("score", 0)
                     feedback  = ev.get("feedback", "")
                     follow_up = ev.get("follow_up", "Let's continue.")
 
-                    # Log the score
                     score_log.append({
-                        "round":    rounds[round_idx]["label"],
-                        "question": last_q[:120],
-                        "answer":   user_answer[:120],
-                        "score":    score,
+                        "round": rounds[round_idx]["label"],
+                        "question": last_q[:120], "answer": user_answer[:120], "score": score,
                     })
                     st.session_state.interview_score_log = score_log
 
-                    # Build response: feedback + follow-up
                     q_count = st.session_state.get("interview_q_count", 1)
                     MAX_Q_PER_ROUND = 3
 
                     if q_count >= MAX_Q_PER_ROUND:
-                        # Auto-advance hint
-                        reply = (
-                            f"**Feedback:** {feedback}\n\n"
-                            f"**Score: {score}/10**\n\n"
-                            f"✅ Good work on this round! Click **Next Round** to continue."
-                        )
+                        reply = (f"**Feedback:** {feedback}\n\n**Score: {score}/10**\n\n"
+                                 f"✅ Good work on this round! Click **Next Round** to continue.")
                     else:
-                        reply = (
-                            f"**Feedback:** {feedback}\n\n"
-                            f"**Score: {score}/10**\n\n"
-                            f"**Follow-up:** {follow_up}"
-                        )
+                        reply = (f"**Feedback:** {feedback}\n\n**Score: {score}/10**\n\n"
+                                 f"**Follow-up:** {follow_up}")
                         st.session_state.interview_q_count = q_count + 1
 
-                    messages.append({
-                        "role":    "assistant",
-                        "content": reply,
-                        "round":   round_idx,
-                        "score":   score,
-                    })
-
+                    messages.append({"role":"assistant","content":reply,"round":round_idx,"score":score})
                 elif skip:
-                    messages.append({
-                        "role":    "assistant",
-                        "content": "No problem — let's move on. " +
-                                   (rounds[round_idx]["focus"].capitalize() + " continues…"),
-                        "round":   round_idx,
-                    })
+                    messages.append({"role":"assistant",
+                                     "content":"No problem — let's move on. " + rounds[round_idx]["focus"].capitalize() + " continues…",
+                                     "round":round_idx})
 
                 st.session_state.interview_messages = messages
                 st.rerun()
 
-            # Handle Next Round button
             if next_round_btn:
                 next_idx = round_idx + 1
                 if next_idx >= total_rounds:
@@ -2457,31 +2823,23 @@ elif page == "🎤 AI Interview Simulator":
                 else:
                     st.session_state.interview_round   = next_idx
                     st.session_state.interview_q_count = 0
-                    # Generate opening for new round
                     with st.spinner(f"🎤 Starting {rounds[next_idx]['label']}…"):
-                        opening = generate_interview_opening(
-                            iv_role, iv_domain, iv_diff,
-                            rounds[next_idx], iv_skills,
-                        )
-                    messages.append({
-                        "role":    "assistant",
-                        "content": f"---\n### {rounds[next_idx]['label']}\n\n{opening}",
-                        "round":   next_idx,
-                    })
-                    st.session_state.interview_messages  = messages
-                    st.session_state.interview_q_count   = 1
+                        opening = generate_interview_opening(iv_role, iv_domain, iv_diff, rounds[next_idx], iv_skills)
+                    messages.append({"role":"assistant",
+                                     "content":f"---\n### {rounds[next_idx]['label']}\n\n{opening}",
+                                     "round":next_idx})
+                    st.session_state.interview_messages = messages
+                    st.session_state.interview_q_count  = 1
                 st.rerun()
 
-        # ── Final debrief ─────────────────────────────────────
         else:
             st.divider()
             st.markdown("## 🏁 Interview Complete — Final Debrief")
 
             if score_log:
                 avg_final = round(sum(s["score"] for s in score_log) / len(score_log), 1)
-
                 c1, c2, c3 = st.columns(3)
-                with c1: st.metric("🏆 Final Score",    f"{avg_final}/10")
+                with c1: st.metric("🏆 Final Score",     f"{avg_final}/10")
                 with c2: st.metric("✅ Questions Scored", len(score_log))
                 with c3: st.metric("🎯 Rounds Completed", len(rounds))
 
@@ -2508,26 +2866,21 @@ elif page == "🎤 AI Interview Simulator":
                     debrief = generate_interview_report(iv_role, score_log)
                 st.info(debrief)
 
-                # Save to Google Sheets
                 save_interview_result([
                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     iv_name, iv_role, iv_domain, iv_diff,
-                    ", ".join(iv_skills[:8]),
-                    avg_final, len(score_log), len(rounds),
+                    ", ".join(iv_skills[:8]), avg_final, len(score_log), len(rounds),
                 ])
-
             else:
                 st.info("No answers were scored. Run the interview and answer questions to get your report.")
 
             if st.button("🔄 Start New Interview"):
-                for k in ["interview_started", "interview_messages", "interview_context",
-                          "interview_round", "interview_score_log", "interview_complete",
-                          "interview_q_count", "iv_name", "iv_role", "iv_domain",
-                          "iv_difficulty", "iv_skills", "iv_rounds"]:
+                for k in ["interview_started","interview_messages","interview_context",
+                          "interview_round","interview_score_log","interview_complete",
+                          "interview_q_count","iv_name","iv_role","iv_domain",
+                          "iv_difficulty","iv_skills","iv_rounds"]:
                     st.session_state.pop(k, None)
                 st.rerun()
-
-
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2540,32 +2893,29 @@ elif page == "🤖 AI Learning Agent":
     st.caption("Adaptive study loop — AI teaches, quizzes, re-explains, and tracks your mastery.")
     st.session_state.current_feature = "AI_Learning_Agent"
 
-    # ── Setup form (shown until agent_started is True) ────
     if not st.session_state.get("agent_started"):
 
         col1, col2 = st.columns(2)
         with col1:
-            ag_name  = st.text_input("Your Name",     key="ag_name_input")
+            ag_name  = st.text_input("Your Name",       key="ag_name_input")
             ag_topic = st.text_input("Topic to Master",
                 placeholder="e.g. Python, Machine Learning, SQL, React…")
         with col2:
             ag_edu   = st.text_input("Education Level",
                 placeholder="e.g. B.Tech, 12th Grade, Self-taught…")
-            ag_level = st.selectbox("Difficulty Level",
-                ["Beginner", "Intermediate", "Expert"])
+            ag_level = st.selectbox("Difficulty Level", ["Beginner","Intermediate","Expert"])
 
         ag_goal = st.text_input("Learning Goal (optional)",
             placeholder="e.g. Crack interviews, Build projects, Pass exam…")
 
         st.info(
             "🔄 **How the AI Learning Agent works:**\n\n"
-            "1. Generates a personalised 5–7 module learning plan for your topic\n"
+            "1. Generates a personalised 5–7 module learning plan\n"
             "2. Teaches each module with structured explanation + examples\n"
             "3. Quizzes you after every module (3 questions)\n"
             "4. Score ≥ 60% → proceed to next module\n"
             "5. Score < 60% → AI re-explains using a completely different approach\n"
-            "6. Tracks your mastery score across all modules\n"
-            "7. Generates a final AI Mastery Report"
+            "6. Generates a final AI Mastery Report"
         )
 
         if st.button("🚀 Start Learning", use_container_width=True):
@@ -2593,7 +2943,6 @@ elif page == "🤖 AI Learning Agent":
                 st.session_state.current_user   = ag_name
                 st.rerun()
 
-    # ── Active adaptive learning loop ─────────────────────
     else:
         name_ag  = st.session_state.agent_name
         topic_ag = st.session_state.agent_topic
@@ -2605,15 +2954,12 @@ elif page == "🤖 AI Learning Agent":
         phase    = st.session_state.agent_phase
         total    = len(plan)
 
-        # Progress bar
-        prog_pct = min(step / total, 1.0)
-        st.progress(prog_pct)
+        st.progress(min(step / total, 1.0))
         if step < total:
             st.markdown(f"**Module {step + 1} of {total} — {plan[step].get('title', '')}**")
         else:
             st.markdown("**✅ All modules complete!**")
 
-        # Sidebar live mastery tracker
         if scores:
             st.sidebar.markdown("---")
             st.sidebar.markdown("### 📊 Live Mastery")
@@ -2623,24 +2969,22 @@ elif page == "🤖 AI Learning Agent":
                 icon = "🟢" if s >= 80 else "🟡" if s >= 60 else "🔴"
                 st.sidebar.caption(f"{icon} Module {i + 1}: {s}%")
 
-        # ── EXPLAIN phase ─────────────────────────────────
+        # EXPLAIN phase
         if phase == "explain" and step < total:
             module  = plan[step]
             msg_key = f"explain_{step}"
 
             if msg_key not in st.session_state:
-                past_ctx = " → ".join(
-                    plan[i].get("title", "") for i in range(step)
-                ) if step > 0 else ""
-                with st.spinner(f"📖 Teaching: {module.get('title', '')}…"):
+                past_ctx = " → ".join(plan[i].get("title","") for i in range(step)) if step > 0 else ""
+                with st.spinner(f"📖 Teaching: {module.get('title','')}…"):
                     explanation = generate_module_explanation(
-                        topic_ag, module.get("title", ""),
-                        module.get("objective", ""), level_ag, edu_ag, past_ctx,
+                        topic_ag, module.get("title",""),
+                        module.get("objective",""), level_ag, edu_ag, past_ctx,
                     )
                 st.session_state[msg_key] = explanation
 
-            st.markdown(f"### 📖 Module {step + 1}: {module.get('title', '')}")
-            st.markdown(f"*Objective: {module.get('objective', '')}*")
+            st.markdown(f"### 📖 Module {step + 1}: {module.get('title','')}")
+            st.markdown(f"*Objective: {module.get('objective','')}*")
             st.divider()
             st.markdown(st.session_state[msg_key])
             st.divider()
@@ -2648,21 +2992,19 @@ elif page == "🤖 AI Learning Agent":
             if st.button("✅ I understood this — Take the Quiz", use_container_width=True):
                 if not check_request_limit(): st.stop()
                 with st.spinner("📝 Generating quiz…"):
-                    quiz = generate_module_quiz(topic_ag, module.get("title", ""), level_ag)
+                    quiz = generate_module_quiz(topic_ag, module.get("title",""), level_ag)
                 st.session_state.agent_quiz           = quiz
                 st.session_state.agent_quiz_submitted = False
                 st.session_state.agent_phase          = "quiz"
                 st.rerun()
 
-        # ── QUIZ phase ────────────────────────────────────
+        # QUIZ phase
         elif phase == "quiz" and step < total:
             module = plan[step]
             quiz   = st.session_state.agent_quiz or []
 
-            st.markdown(f"### 📝 Quiz — Module {step + 1}: {module.get('title', '')}")
-            st.caption("Answer all questions, then submit.")
+            st.markdown(f"### 📝 Quiz — Module {step + 1}: {module.get('title','')}")
 
-            # Empty quiz fallback
             if not quiz:
                 st.warning("Quiz generation failed. Crediting module and moving on.")
                 st.session_state.agent_scores.append(60)
@@ -2672,13 +3014,9 @@ elif page == "🤖 AI Learning Agent":
                 st.rerun()
 
             for qi, q in enumerate(quiz):
-                st.markdown(f"**Q{qi + 1}. {q.get('question', '')}**")
-                st.radio(
-                    "", q.get("options", []),
-                    index=None,
-                    key=f"aq_{step}_{qi}",
-                    disabled=st.session_state.agent_quiz_submitted,
-                )
+                st.markdown(f"**Q{qi + 1}. {q.get('question','')}**")
+                st.radio("", q.get("options",[]), index=None, key=f"aq_{step}_{qi}",
+                         disabled=st.session_state.agent_quiz_submitted)
 
             if not st.session_state.agent_quiz_submitted:
                 if st.button("Submit Quiz", use_container_width=True):
@@ -2686,22 +3024,19 @@ elif page == "🤖 AI Learning Agent":
                     wrong_qs = []
                     for qi, q in enumerate(quiz):
                         ans_idx     = q.get("answer", 0)
-                        correct_opt = (q["options"][ans_idx]
-                                       if ans_idx < len(q.get("options", [])) else "")
-                        selected = st.session_state.get(f"aq_{step}_{qi}")
+                        correct_opt = (q["options"][ans_idx] if ans_idx < len(q.get("options",[])) else "")
+                        selected    = st.session_state.get(f"aq_{step}_{qi}")
                         if selected and selected == correct_opt:
                             correct += 1
                         else:
                             wrong_qs.append(q)
                     pct = round(correct / len(quiz) * 100) if quiz else 0
-                    st.session_state.agent_quiz_submitted          = True
-                    st.session_state[f"quiz_result_{step}"]        = {
-                        "pct": pct, "correct": correct,
-                        "total": len(quiz), "wrong": wrong_qs,
+                    st.session_state.agent_quiz_submitted       = True
+                    st.session_state[f"quiz_result_{step}"]     = {
+                        "pct": pct, "correct": correct, "total": len(quiz), "wrong": wrong_qs,
                     }
                     st.rerun()
 
-            # Results display (post-submit)
             if st.session_state.agent_quiz_submitted:
                 result = st.session_state.get(f"quiz_result_{step}", {})
                 pct    = result.get("pct", 0)
@@ -2709,39 +3044,29 @@ elif page == "🤖 AI Learning Agent":
 
                 for qi, q in enumerate(quiz):
                     ans_idx     = q.get("answer", 0)
-                    correct_opt = (q["options"][ans_idx]
-                                   if ans_idx < len(q.get("options", [])) else "")
-                    selected = st.session_state.get(f"aq_{step}_{qi}")
+                    correct_opt = (q["options"][ans_idx] if ans_idx < len(q.get("options",[])) else "")
+                    selected    = st.session_state.get(f"aq_{step}_{qi}")
                     if selected == correct_opt:
                         st.success(f"Q{qi + 1} ✅  {correct_opt}")
                     else:
-                        st.error(
-                            f"Q{qi + 1} ❌  Your answer: {selected or '(none)'}"
-                            f"  |  Correct: {correct_opt}"
-                        )
+                        st.error(f"Q{qi + 1} ❌  Your answer: {selected or '(none)'}  |  Correct: {correct_opt}")
                     if q.get("explanation"):
                         st.caption(f"💡 {q['explanation']}")
 
                 st.divider()
                 score_col = "#22c55e" if pct >= 80 else "#f59e0b" if pct >= 60 else "#ef4444"
                 st.markdown(
-                    f'<div style="background:rgba(255,255,255,0.08);border-radius:12px;'
-                    f'padding:16px;text-align:center;">'
+                    f'<div style="background:rgba(255,255,255,0.08);border-radius:12px;padding:16px;text-align:center;">'
                     f'<h2 style="color:{score_col};margin:0;">{pct}%</h2>'
-                    f'<p style="color:#94a3b8;margin:4px 0;">Module {step + 1} Score</p>'
-                    f'</div>',
+                    f'<p style="color:#94a3b8;margin:4px 0;">Module {step + 1} Score</p></div>',
                     unsafe_allow_html=True,
                 )
                 st.markdown("")
 
-                # ── PASS: move forward ────────────────────
                 if pct >= 60:
-                    st.success(
-                        f"✅ {'Excellent mastery!' if pct >= 80 else 'Good — moving to next module.'}"
-                    )
+                    st.success(f"✅ {'Excellent mastery!' if pct >= 80 else 'Good — moving to next module.'}")
                     scores.append(pct)
                     st.session_state.agent_scores = scores
-
                     if st.button("Next Module ➡️", use_container_width=True):
                         nxt = step + 1
                         st.session_state.agent_step  = nxt
@@ -2749,21 +3074,13 @@ elif page == "🤖 AI Learning Agent":
                         st.session_state.agent_quiz  = None
                         st.session_state.agent_quiz_submitted = False
                         st.rerun()
-
-                # ── FAIL: re-explain then retry ───────────
                 else:
-                    st.warning(
-                        f"⚠️ {pct}% — below 60%. "
-                        f"The AI will re-explain this module differently before you retry."
-                    )
+                    st.warning(f"⚠️ {pct}% — below 60%. AI will re-explain differently before retry.")
                     re_key = f"reexplain_{step}"
                     if re_key not in st.session_state:
                         with st.spinner("🔄 Generating alternative explanation…"):
-                            re_exp = generate_re_explanation(
-                                topic_ag, module.get("title", ""), level_ag, wrong
-                            )
+                            re_exp = generate_re_explanation(topic_ag, module.get("title",""), level_ag, wrong)
                         st.session_state[re_key] = re_exp
-
                     st.divider()
                     st.markdown("### 🔄 Alternative Explanation")
                     st.info(st.session_state[re_key])
@@ -2771,10 +3088,7 @@ elif page == "🤖 AI Learning Agent":
                     if st.button("Try Quiz Again 🔁", use_container_width=True):
                         if not check_request_limit(): st.stop()
                         with st.spinner("📝 Generating a new quiz attempt…"):
-                            new_quiz = generate_module_quiz(
-                                topic_ag, module.get("title", ""), level_ag
-                            )
-                        # Credit partial attempt so student can advance
+                            new_quiz = generate_module_quiz(topic_ag, module.get("title",""), level_ag)
                         scores.append(max(pct, 40))
                         st.session_state.agent_scores         = scores
                         st.session_state.agent_quiz           = new_quiz
@@ -2786,7 +3100,7 @@ elif page == "🤖 AI Learning Agent":
                         st.session_state.agent_phase = "explain" if nxt < total else "done"
                         st.rerun()
 
-        # ── DONE phase — mastery report ───────────────────
+        # DONE phase
         elif phase == "done" or step >= total:
             st.divider()
             st.markdown("## 🏆 Learning Complete — Mastery Report")
@@ -2802,10 +3116,8 @@ elif page == "🤖 AI Learning Agent":
                 with c3: st.metric("📚 Topic",        topic_ag)
 
                 st.markdown(
-                    f'<div style="background:rgba(255,255,255,0.08);border-radius:10px;'
-                    f'padding:4px;margin:8px 0 16px 0;">'
-                    f'<div style="background:{bar_col};width:{avg}%;'
-                    f'height:14px;border-radius:8px;"></div></div>',
+                    f'<div style="background:rgba(255,255,255,0.08);border-radius:10px;padding:4px;margin:8px 0 16px 0;">'
+                    f'<div style="background:{bar_col};width:{avg}%;height:14px;border-radius:8px;"></div></div>',
                     unsafe_allow_html=True,
                 )
 
@@ -2816,7 +3128,7 @@ elif page == "🤖 AI Learning Agent":
                 st.markdown("### 📊 Module-by-Module Breakdown")
                 for i, (mod, sc) in enumerate(zip(plan[:len(final_scores)], final_scores)):
                     icon = "🟢" if sc >= 80 else "🟡" if sc >= 60 else "🔴"
-                    st.markdown(f"{icon} **Module {i + 1} — {mod.get('title', '')}**: {sc}%")
+                    st.markdown(f"{icon} **Module {i + 1} — {mod.get('title','')}**: {sc}%")
 
                 st.divider()
                 st.markdown("### 🤖 AI Mastery Report")
@@ -2834,16 +3146,14 @@ elif page == "🤖 AI Learning Agent":
                 st.info("No module scores recorded yet.")
 
             if st.button("🔄 Start New Topic", use_container_width=True):
-                keys_to_clear = [
-                    "agent_started", "agent_plan", "agent_step", "agent_messages",
-                    "agent_quiz", "agent_quiz_submitted", "agent_scores",
-                    "agent_topic", "agent_level", "agent_name", "agent_phase",
-                    "agent_edu", "agent_goal",
-                ]
+                keys_to_clear = ["agent_started","agent_plan","agent_step","agent_messages",
+                                  "agent_quiz","agent_quiz_submitted","agent_scores",
+                                  "agent_topic","agent_level","agent_name","agent_phase",
+                                  "agent_edu","agent_goal"]
                 for k in keys_to_clear:
                     st.session_state.pop(k, None)
                 for k in list(st.session_state.keys()):
-                    if k.startswith(("explain_", "reexplain_", "quiz_result_", "aq_")):
+                    if k.startswith(("explain_","reexplain_","quiz_result_","aq_")):
                         del st.session_state[k]
                 st.rerun()
 
@@ -2911,7 +3221,6 @@ elif page == "🔐 Admin Portal":
             st.markdown("## 📂 Full Dataset")
             st.dataframe(df)
 
-            # ── API Cost Analytics ───────────────────────────
             @st.cache_data(ttl=300)
             def load_api_usage():
                 try:
@@ -2938,7 +3247,7 @@ elif page == "🔐 Admin Portal":
                     st.markdown("## 🧠 Platform Health (Today)")
                     c1,c2,c3,c4 = st.columns(4)
                     with c1: st.metric("📊 Requests Today",     len(today_df))
-                    with c2: st.metric("⚡ Avg Tokens/Request", int(today_df["total_tokens"].mean()) if "total_tokens" in today_df else 0)
+                    with c2: st.metric("⚡ Avg Tokens/Request", int(today_df["total_tokens"].mean()) if "total_tokens" in today_df and len(today_df) else 0)
                     with c3: st.metric("💰 Today's AI Cost",    f"${today_df['estimated_cost'].sum():.4f}" if "estimated_cost" in today_df else "$0")
                     with c4: st.metric("👥 Active Users Today", today_df["user"].nunique() if "user" in today_df.columns else 0)
                     st.divider()

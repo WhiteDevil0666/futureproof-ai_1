@@ -624,16 +624,12 @@ def generate_mcqs(skills, difficulty, test_mode, mcq_count=10):
         mode_instruction = "Generate skill-based multiple choice questions."
 
     prompt = f"""
-    Create 10 multiple choice questions.
-
+    Create {mcq_count} multiple choice questions.
     Skills: {", ".join(skills)}
     Difficulty: {difficulty}
-
     {mode_instruction}
-
     STRICT FORMAT:
     Return ONLY valid JSON array like this:
-
     [
         {{
             "question": "Question text",
@@ -641,7 +637,6 @@ def generate_mcqs(skills, difficulty, test_mode, mcq_count=10):
             "answer": 0
         }}
     ]
-
     IMPORTANT:
     - Exactly 4 options per question
     - answer must be index (0,1,2,3)
@@ -662,7 +657,6 @@ def generate_mcqs(skills, difficulty, test_mode, mcq_count=10):
     if isinstance(data, list):
         return data
     return None
-
 
 def generate_explanation(question, correct_answer):
     prompt = f"""

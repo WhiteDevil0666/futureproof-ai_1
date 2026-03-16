@@ -1695,14 +1695,14 @@ elif page == "📚 Guided Study Chat":
     # ================= NEW: BOOK / SOURCE FIELD =================
     book_source = st.text_input(
         "📖 Reference Book / Source (Optional)",
-        placeholder="e.g. NCERT Class 9 Science, RD Sharma, HC Verma, CBSE, any book name..."
+        placeholder="e.g. NCERT, RD Sharma, HC Verma, CBSE, any book name..."
     )
     if book_source:
         st.caption(f"📌 Tutor will follow the structure and style of: **{book_source}**")
     # ============================================================
 
     level = st.selectbox("Skill Level", ["Beginner", "Intermediate", "Expert"])
-    learning_goal = st.text_input("Learning Goal (Optional)")
+    learning_goal = st.text_input("Learning Goal")
 
     if "study_chat_started" not in st.session_state:
         st.session_state.study_chat_started = False

@@ -483,12 +483,19 @@ Return only role name.
 
 # ================= CORE FUNCTIONS =================
 
-def generate_growth(role, domain):
+def generate_growth(role, domain, education=""):
     prompt = f"""
 Role: {role}
 Domain: {domain}
-Suggest 6 skills that increase competitiveness.
-Return comma-separated only.
+Education Level: {education}
+
+Suggest 6 skills that would most increase this person's competitiveness in the job market.
+Consider their education level when suggesting skills —
+for example a fresher needs foundational skills,
+a graduate needs intermediate tools,
+a postgraduate needs advanced or specialized skills.
+
+Return comma-separated skill names only. No explanations. No numbering.
 """
     response = safe_llm_call(MAIN_MODEL, [{"role": "user", "content": prompt}])
     if not response:
@@ -565,27 +572,38 @@ Format exactly like this:
         return {"free": [], "paid": []}
 
 
-def generate_market(role, domain):
+def generate_market(role, domain, education=""):
     prompt = f"""
 Role: {role}
 Domain: {domain}
-Explain demand level, hiring scale, 3-5 year outlook, job availability.
+Candidate Education Level: {education}
+
+Explain the job market for this role in 4-6 lines covering:
+- Current demand level
+- Typical hiring scale (startups, MNCs, etc.)
+- 3-5 year outlook
+- What level of position someone with "{education}" background can realistically target
+
+Keep it practical and direct.
 """
     return safe_llm_call(MAIN_MODEL, [{"role": "user", "content": prompt}]) or "Market data unavailable."
 
 
-def generate_confidence(role, domain):
+def generate_confidence(role, domain, education=""):
     prompt = f"""
 Role: {role}
 Domain: {domain}
+Candidate Education Level: {education}
 
 You are a career evaluation engine.
 
-Provide ONLY:
+Given the education level "{education}", provide a realistic hiring confidence for this role.
 
-Confidence: X% (numeric realistic hiring confidence)
+Return ONLY this format:
+
+Confidence: X%
 Risk: Low/Medium/High
-Summary: 2-3 lines about job market demand and career stability.
+Summary: 2-3 lines about market demand and what this education level can realistically expect.
 
 DO NOT:
 - Propose projects
@@ -599,6 +617,40 @@ Keep response short and strictly career-focused.
 """
     return safe_llm_call(MAIN_MODEL, [{"role": "user", "content": prompt}]) or \
            "Confidence: 70%\nRisk: Medium\nSummary: Moderate outlook."
+
+
+def generate_timeline(role, domain, growth_skills, hours_per_week):
+    """
+    AI-estimated learning timeline based on actual skill complexity.
+    Replaces the old arbitrary formula: (len(growth) * 40) / hours
+    """
+    if not growth_skills:
+        return 0
+
+    prompt = f"""
+Role: {role}
+Domain: {domain}
+Skills to learn: {", ".join(growth_skills)}
+Weekly learning hours available: {hours_per_week}
+
+Estimate a realistic number of weeks to learn these skills at this pace.
+Consider the complexity of each skill and assume the person is starting from basics.
+
+Return ONLY a single integer number of weeks. Nothing else. No explanation.
+"""
+    response = safe_llm_call(
+        MAIN_MODEL,
+        [{"role": "user", "content": prompt}],
+        temperature=0.1
+    )
+
+    if response:
+        match = re.search(r"\d+", response)
+        if match:
+            return int(match.group())
+
+    # Fallback: ~20 hours per skill on average
+    return round((len(growth_skills) * 20) / hours_per_week)
 
 
 def generate_mcqs(skills, difficulty, test_mode, mcq_count=10):
@@ -658,6 +710,7 @@ def generate_mcqs(skills, difficulty, test_mode, mcq_count=10):
         return data[:mcq_count]
     return None
 
+
 def generate_explanation(question, correct_answer):
     prompt = f"""
 Question:
@@ -677,28 +730,27 @@ Do NOT add extra formatting.
         temperature=0.3
     ) or "Explanation unavailable."
 
+# # ================= CAREER READINESS SCORE =================
 
-# ================= CAREER READINESS SCORE =================
+# def calculate_career_readiness(skills, growth, confidence_value):
+#     skill_score = min(len(skills) * 10, 40)
+#     growth_score = min(len(growth) * 5, 30)
+#     market_score = min(confidence_value, 30)
+#     total_score = skill_score + growth_score + market_score
 
-def calculate_career_readiness(skills, growth, confidence_value):
-    skill_score = min(len(skills) * 10, 40)
-    growth_score = min(len(growth) * 5, 30)
-    market_score = min(confidence_value, 30)
-    total_score = skill_score + growth_score + market_score
+#     skill_msg = "Strong skill foundation." if skill_score > 25 else "You need to build more core skills."
+#     growth_msg = "Only minor improvements needed." if growth_score > 20 else "Focus on recommended growth skills."
+#     market_msg = "Market demand is strong." if market_score > 20 else "This role has moderate demand."
 
-    skill_msg = "Strong skill foundation." if skill_score > 25 else "You need to build more core skills."
-    growth_msg = "Only minor improvements needed." if growth_score > 20 else "Focus on recommended growth skills."
-    market_msg = "Market demand is strong." if market_score > 20 else "This role has moderate demand."
-
-    return {
-        "total": total_score,
-        "skill_score": skill_score,
-        "growth_score": growth_score,
-        "market_score": market_score,
-        "skill_msg": skill_msg,
-        "growth_msg": growth_msg,
-        "market_msg": market_msg
-    }
+#     return {
+#         "total": total_score,
+#         "skill_score": skill_score,
+#         "growth_score": growth_score,
+#         "market_score": market_score,
+#         "skill_msg": skill_msg,
+#         "growth_msg": growth_msg,
+#         "market_msg": market_msg
+#     }
 
 
 # ==========================================================
@@ -1073,7 +1125,7 @@ if page == "🔎 Skill Intelligence":
     with col2:
         education = st.text_input(
             "Education Level",
-            placeholder="e.g. 10th Grade, 12th Standard, B.Tech, MBA, Bootcamp Graduate..."
+            placeholder="e.g. 10th Grade, B.Tech, MBA, Bootcamp Graduate..."
         )
 
     skills_input = st.text_input("Current Skills (comma-separated)")
@@ -1081,13 +1133,19 @@ if page == "🔎 Skill Intelligence":
 
     if st.button("🔎 Analyze Skill Intelligence", use_container_width=True):
 
-        # FIX 3: check_request_limit returns bool, st.stop() is explicit here
         if not check_request_limit():
+            st.stop()
+
+        if not name.strip():
+            st.warning("⚠️ Please enter your name.")
+            st.stop()
+
+        if not education.strip():
+            st.warning("⚠️ Please enter your education level.")
             st.stop()
 
         skills = normalize_skills(skills_input)
 
-        # FIX 6: Validate skills before proceeding
         if not skills and skills_input.strip():
             st.warning("⚠️ No valid skills detected. Use comma-separated names (e.g. Python, SQL, Excel).")
             st.stop()
@@ -1101,101 +1159,246 @@ if page == "🔎 Skill Intelligence":
 
         skills_tuple = tuple(skills)
 
-        domain = detect_domain_cached(skills_tuple) or "General Domain"
-        role = infer_role_cached(skills_tuple, domain) or "Specialist"
+        with st.spinner("🔍 Detecting your career domain..."):
+            domain = detect_domain_cached(skills_tuple) or "General Domain"
 
-        growth = generate_growth(role, domain) or []
-        certifications = generate_certifications(role, domain) or []
-        market = generate_market(role, domain) or "Market data unavailable."
-        confidence = generate_confidence(role, domain)
-        platforms = generate_platforms(role, domain, skills) or {"free": [], "paid": []}
-        weeks = round((len(growth) * 40) / hours) if hours else 0
+        with st.spinner("🎯 Inferring your best-fit role..."):
+            role = infer_role_cached(skills_tuple, domain) or "Specialist"
 
+        with st.spinner("📈 Building your growth plan..."):
+            growth = generate_growth(role, domain, education) or []
+
+        with st.spinner("🎓 Finding certifications..."):
+            certifications = generate_certifications(role, domain) or []
+
+        with st.spinner("🌍 Analyzing market outlook..."):
+            market = generate_market(role, domain, education) or "Market data unavailable."
+
+        with st.spinner("💡 Evaluating career confidence..."):
+            confidence = generate_confidence(role, domain, education)
+
+        with st.spinner("🌐 Loading learning platforms..."):
+            platforms = generate_platforms(role, domain, skills) or {"free": [], "paid": []}
+
+        with st.spinner("⏳ Estimating your learning timeline..."):
+            weeks = generate_timeline(role, domain, growth, hours)
+
+        # ================= PARSE CONFIDENCE =================
+        confidence_value = 70
+        risk_value = "Medium"
+        summary_value = "Moderate job outlook."
+
+        if isinstance(confidence, dict):
+            confidence_value = confidence.get("confidence", 70)
+            risk_value = confidence.get("risk", "Medium")
+            summary_value = confidence.get("summary", "Moderate job outlook.")
+        elif isinstance(confidence, str):
+            conf_match = re.search(r"(\d+)%", confidence)
+            risk_match = re.search(r"Risk:\s*(Low|Medium|High)", confidence)
+            summary_match = re.search(r"Summary:\s*(.*)", confidence)
+            if conf_match:
+                confidence_value = int(conf_match.group(1))
+            if risk_match:
+                risk_value = risk_match.group(1)
+            if summary_match:
+                summary_value = summary_match.group(1)
+
+        # ================= FIX: CAREER READINESS SCORE =================
+        # skill_score:  more skills = higher score (max 40)
+        # growth_score: fewer gaps remaining = higher score (max 30)
+        # market_score: confidence % mapped proportionally to 30 pts
+        skill_score  = min(len(skills) * 10, 40)
+        growth_score = max(0, 30 - (len(growth) * 5))
+        market_score = round((min(confidence_value, 100) / 100) * 30)
+        total_score  = skill_score + growth_score + market_score
+
+        skill_msg  = "Strong skill foundation." if skill_score >= 30 else \
+                     "Good start — add 2-3 more core skills to strengthen your profile."
+        growth_msg = "Minimal skill gaps — you are close to market-ready." if growth_score >= 20 else \
+                     "Several growth skills recommended — focus on the top 2-3 first."
+        market_msg = "Market demand is strong for this role." if market_score >= 22 else \
+                     "Moderate market demand — consider broadening to adjacent roles."
+
+        readiness = {
+            "total": total_score,
+            "skill_score": skill_score,
+            "growth_score": growth_score,
+            "market_score": market_score,
+            "skill_msg": skill_msg,
+            "growth_msg": growth_msg,
+            "market_msg": market_msg
+        }
+
+        # ================= TABS =================
         tab1, tab2, tab3, tab4 = st.tabs([
             "🎯 Role Alignment",
-            "📈 Competitiveness Plan",
+            "📈 Growth Plan",
             "🎓 Certifications",
             "🌍 Market Outlook"
         ])
 
+        # ======================================================
+        # TAB 1 — ROLE ALIGNMENT
+        # ======================================================
         with tab1:
+
             st.header(role)
-            st.markdown(f"🧭 Detected Domain: `{domain}`")
+            st.markdown(f"🧭 **Domain:** `{domain}`  &nbsp;&nbsp; 🎓 **Education:** `{education}`")
 
-            confidence_value = 70
-            risk_value = "Medium"
-            summary_value = "Moderate job outlook."
+            st.divider()
 
-            if isinstance(confidence, dict):
-                confidence_value = confidence.get("confidence", 70)
-                risk_value = confidence.get("risk", "Medium")
-                summary_value = confidence.get("summary", "Moderate job outlook.")
-            elif isinstance(confidence, str):
-                conf_match = re.search(r"(\d+)%", confidence)
-                risk_match = re.search(r"Risk:\s*(Low|Medium|High)", confidence)
-                summary_match = re.search(r"Summary:\s*(.*)", confidence)
-                if conf_match:
-                    confidence_value = int(conf_match.group(1))
-                if risk_match:
-                    risk_value = risk_match.group(1)
-                if summary_match:
-                    summary_value = summary_match.group(1)
+            # ---- Single clean scorecard (replaces 4 redundant metrics) ----
+            st.markdown("### 🏆 Career Readiness Scorecard")
 
-            readiness = calculate_career_readiness(skills, growth, confidence_value)
+            c1, c2, c3, c4 = st.columns(4)
 
-            colA, colB = st.columns(2)
-            with colA:
-                st.metric("Hiring Confidence", f"{confidence_value}%")
-            with colB:
-                st.metric("Market Risk", risk_value)
+            with c1:
+                st.metric("Overall Readiness", f"{total_score}/100")
+            with c2:
+                st.metric("Skill Strength", f"{skill_score}/40")
+            with c3:
+                st.metric("Growth Gap", f"{growth_score}/30")
+            with c4:
+                st.metric("Market Demand", f"{market_score}/30")
 
-            st.markdown("### 📌 Career Outlook")
-            st.markdown(summary_value)
+            # Readiness bar
+            bar_color = "#22c55e" if total_score >= 75 else "#f59e0b" if total_score >= 50 else "#ef4444"
+            st.markdown(f"""
+                <div style="background:rgba(255,255,255,0.08);border-radius:10px;padding:4px;margin:8px 0 16px 0;">
+                    <div style="background:{bar_color};width:{total_score}%;height:12px;border-radius:8px;transition:width 0.5s;"></div>
+                </div>
+            """, unsafe_allow_html=True)
 
-            st.markdown("### 🚀 Career Readiness Score")
-            st.metric("Overall Career Readiness", f"{readiness['total']}%")
-
-            colR1, colR2, colR3 = st.columns(3)
-            with colR1:
-                st.metric("Skill Strength", f"{readiness['skill_score']}/40")
-            with colR2:
-                st.metric("Growth Potential", f"{readiness['growth_score']}/30")
-            with colR3:
-                st.metric("Market Alignment", f"{readiness['market_score']}/30")
-
-            st.markdown("### 📌 Score Explanation")
-            st.info(f"**Skill Strength:** {readiness['skill_msg']}")
-            st.info(f"**Growth Potential:** {readiness['growth_msg']}")
-            st.info(f"**Market Alignment:** {readiness['market_msg']}")
-
-        with tab2:
-            if growth:
-                for skill in growth:
-                    st.markdown(f"✔️ {skill}")
-                st.markdown(f"⏳ Estimated Timeline: ~{weeks} weeks")
+            # Score interpretation
+            if total_score >= 75:
+                st.success("✅ **Strong Profile** — You are well-positioned for this role in the current market.")
+            elif total_score >= 50:
+                st.warning("⚠️ **Developing Profile** — A few targeted improvements will significantly boost your chances.")
             else:
-                st.info("No skill recommendations available.")
+                st.error("❌ **Early Stage** — Focus on building core skills before applying for this role.")
 
+            st.divider()
+
+            # ---- Score breakdown explanation ----
+            st.markdown("### 📌 Score Breakdown")
+
+            col_a, col_b, col_c = st.columns(3)
+
+            with col_a:
+                st.markdown("**🔵 Skill Strength**")
+                st.caption(skill_msg)
+
+            with col_b:
+                st.markdown("**🟡 Growth Gap**")
+                st.caption(growth_msg)
+
+            with col_c:
+                st.markdown("**🟢 Market Demand**")
+                st.caption(market_msg)
+
+            st.divider()
+
+            # ---- Hiring confidence + risk (now just supporting info) ----
+            st.markdown("### 📊 Market Signal")
+
+            col_x, col_y = st.columns(2)
+            with col_x:
+                st.metric("Hiring Confidence", f"{confidence_value}%")
+            with col_y:
+                risk_color = {"Low": "🟢", "Medium": "🟡", "High": "🔴"}.get(risk_value, "🟡")
+                st.metric("Market Risk", f"{risk_color} {risk_value}")
+
+            st.markdown(f"_{summary_value}_")
+
+            st.divider()
+
+            # ---- What to do next (new action card) ----
+            st.markdown("### 🚀 Recommended Next Steps")
+
+            if total_score >= 75:
+                st.info("1. **Start applying** — your profile is competitive for entry to mid-level roles.")
+                st.info("2. **Pick 1-2 certifications** from the Certifications tab to strengthen your resume.")
+                st.info("3. **Build a portfolio project** using your top 3 skills to stand out.")
+            elif total_score >= 50:
+                st.info("1. **Focus on growth skills** — pick the top 2 from the Growth Plan tab.")
+                st.info("2. **Get one certification** to validate your skills to recruiters.")
+                st.info("3. **Apply to junior or associate roles** while continuing to learn.")
+            else:
+                st.info("1. **Start with fundamentals** — use the Guided Study Chat to build core knowledge.")
+                st.info("2. **Add 2-3 more skills** relevant to your target domain.")
+                st.info("3. **Revisit this analysis** after 4-6 weeks of focused learning.")
+
+        # ======================================================
+        # TAB 2 — GROWTH PLAN
+        # ======================================================
+        with tab2:
+
+            st.markdown("### 📈 Recommended Growth Skills")
+            st.caption(f"Based on your role as **{role}** in **{domain}** with **{education}** background")
+
+            if growth:
+                for idx, skill in enumerate(growth, 1):
+                    st.markdown(f"**{idx}.** {skill}")
+
+                st.divider()
+
+                # FIX: AI-generated timeline instead of arbitrary formula
+                st.markdown("### ⏳ Estimated Learning Timeline")
+                st.markdown(f"At **{hours} hours/week**, you can realistically cover these skills in approximately:")
+                st.metric("Estimated Timeline", f"~{weeks} weeks")
+                st.caption("This estimate is based on your weekly hours and the complexity of the recommended skills.")
+
+            else:
+                st.info("No growth skill recommendations available.")
+
+        # ======================================================
+        # TAB 3 — CERTIFICATIONS
+        # ======================================================
         with tab3:
+
             st.markdown("### 🎓 Recommended Certifications")
+            st.caption(f"Globally recognized certifications for **{role}**")
+
             if certifications:
                 for cert in certifications:
                     st.markdown(f"- {cert}")
             else:
                 st.info("No certifications available.")
 
-            st.markdown("---")
-            st.markdown("### 🌐 Certification Platforms (Domain-Specific)")
-            st.markdown("#### 🆓 Free Learning Platforms")
-            for item in platforms.get("free", []):
-                st.markdown(f"- [{item['name']}]({item['url']})")
-            st.markdown("#### 💼 Paid / Market Recognized Certifications")
-            for item in platforms.get("paid", []):
-                st.markdown(f"- [{item['name']}]({item['url']})")
+            st.divider()
 
+            st.markdown("### 🌐 Learning Platforms")
+
+            col_free, col_paid = st.columns(2)
+
+            with col_free:
+                st.markdown("#### 🆓 Free Platforms")
+                free_list = platforms.get("free", [])
+                if free_list:
+                    for item in free_list:
+                        st.markdown(f"- [{item['name']}]({item['url']})")
+                else:
+                    st.caption("No free platforms listed.")
+
+            with col_paid:
+                st.markdown("#### 💼 Paid / Industry Recognized")
+                paid_list = platforms.get("paid", [])
+                if paid_list:
+                    for item in paid_list:
+                        st.markdown(f"- [{item['name']}]({item['url']})")
+                else:
+                    st.caption("No paid platforms listed.")
+
+        # ======================================================
+        # TAB 4 — MARKET OUTLOOK
+        # ======================================================
         with tab4:
+
+            st.markdown("### 🌍 Market Outlook")
+            st.caption(f"Demand analysis for **{role}** in **{domain}** — relevant to **{education}** level")
             st.markdown(market)
 
+        # ================= FEEDBACK =================
         st.divider()
 
         rating = st.slider("How useful was this analysis?", 1, 5, 4)
@@ -1206,7 +1409,7 @@ if page == "🔎 Skill Intelligence":
             with open("feedback_log.txt", "a") as f:
                 f.write(f"{timestamp} | {name} | {rating} | {education} | {skills_input} | {feedback_text}\n")
             save_feedback([timestamp, name, rating, education, skills_input, feedback_text])
-            st.success("✅ Feedback saved successfully!")
+            st.success("✅ Feedback saved. Thank you!")
 
 
 # ==========================================================

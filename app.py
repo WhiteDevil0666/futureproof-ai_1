@@ -601,7 +601,7 @@ Keep response short and strictly career-focused.
            "Confidence: 70%\nRisk: Medium\nSummary: Moderate outlook."
 
 
-def generate_mcqs(skills, difficulty, test_mode):
+def generate_mcqs(skills, difficulty, test_mode, mcq_count=10):
     if test_mode == "Theoretical Knowledge":
         mode_instruction = """
         Generate theory-based conceptual multiple choice questions.
@@ -707,16 +707,155 @@ def calculate_career_readiness(skills, growth, confidence_value):
     }
 
 
+# ==========================================================
+# ===== ADD THESE TWO FUNCTIONS TO YOUR MAIN app.py  =======
+# ===== Place them alongside generate_mcqs()         =======
+# ==========================================================
+
+
+def generate_coding_written_questions(skills, difficulty, count):
+    """
+    Generates written/subjective coding questions.
+    Returns a list of dicts with 'question' and 'hints' keys.
+    """
+    prompt = f"""
+You are a senior software engineering interviewer.
+
+Create {count} written coding questions.
+
+Skills: {", ".join(skills)}
+Difficulty: {difficulty}
+
+STRICT FORMAT:
+Return ONLY a valid JSON array like this:
+
+[
+    {{
+        "question": "Write a function that takes a list of integers and returns the two numbers that add up to a target sum. Explain your approach and write the code.",
+        "hints": "Think about hash maps for O(n) solution."
+    }}
+]
+
+RULES:
+- Each question must require the user to actually WRITE code, not just pick an answer
+- Questions should test real implementation ability
+- Include a short hint to guide thinking
+- Difficulty must match: {difficulty}
+  - Beginner: basic loops, conditionals, simple functions
+  - Intermediate: data structures, algorithms, OOP
+  - Expert: system design logic, optimization, complex algorithms
+- No multiple choice options
+- No answers provided
+- Return ONLY the JSON array, no extra text, no markdown
+"""
+
+    response = safe_llm_call(
+        MCQ_MODEL,
+        [
+            {"role": "system", "content": "Return ONLY valid JSON array. No text outside the array."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.4
+    )
+
+    data = safe_json_load(response)
+
+    if isinstance(data, list):
+        # Attach type tag
+        for q in data:
+            q["type"] = "written"
+        return data
+
+    return []
+
+
+def evaluate_written_answer(question, user_answer, difficulty):
+    """
+    AI evaluates a written coding answer.
+    Returns dict with score (0-10), feedback, and a model answer snippet.
+    """
+
+    if not user_answer or not user_answer.strip():
+        return {
+            "score": 0,
+            "feedback": "No answer provided.",
+            "model_answer": "N/A"
+        }
+
+    prompt = f"""
+You are a strict but fair coding interview evaluator.
+
+Question:
+{question}
+
+Candidate's Answer:
+{user_answer}
+
+Difficulty Level: {difficulty}
+
+Evaluate the answer on these criteria:
+1. Correctness — Does the logic/code actually solve the problem?
+2. Efficiency — Is the approach reasonably optimal?
+3. Clarity — Is the code readable and well-structured?
+
+Return ONLY this JSON (no markdown, no extra text):
+
+{{
+    "score": <integer 0 to 10>,
+    "feedback": "<2-3 lines: what was good, what was wrong or missing>",
+    "model_answer": "<a short correct code snippet or approach in 3-6 lines>"
+}}
+
+Scoring guide:
+- 9-10: Fully correct, efficient, clean
+- 7-8: Correct but minor issues
+- 5-6: Partially correct, right direction
+- 3-4: Wrong but shows some understanding
+- 0-2: Off-track or blank
+"""
+
+    response = safe_llm_call(
+        MCQ_MODEL,
+        [
+            {"role": "system", "content": "Return ONLY valid JSON. No extra text."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.2
+    )
+
+    if not response:
+        return {
+            "score": 0,
+            "feedback": "Evaluation failed. Please try again.",
+            "model_answer": "N/A"
+        }
+
+    try:
+        cleaned = response.strip().replace("```json", "").replace("```", "").strip()
+        start = cleaned.find("{")
+        end = cleaned.rfind("}") + 1
+        if start != -1 and end != -1:
+            cleaned = cleaned[start:end]
+        result = json.loads(cleaned)
+        return result
+    except Exception as e:
+        print("Written eval parse error:", e)
+        return {
+            "score": 0,
+            "feedback": "Could not parse evaluation. Raw response logged.",
+            "model_answer": "N/A"
+        }
+
 # ================= TIMER CONFIG =================
 
-def get_time_limit(difficulty):
-    if difficulty == "Beginner":
-        return 2 * 60
-    elif difficulty == "Intermediate":
-        return 4 * 60
-    elif difficulty == "Expert":
-        return 6 * 60
-    return 2 * 60
+def get_time_limit(difficulty, mcq_count=10, test_mode="Theoretical Knowledge"):
+    time_per_q = {"Beginner": 12, "Intermediate": 24, "Expert": 36}
+    base = time_per_q.get(difficulty, 12)
+    if test_mode == "Coding Based":
+        mcq_half = mcq_count // 2
+        written_half = mcq_count - mcq_half
+        return (mcq_half * base) + (written_half * base * 3)
+    return base * mcq_count
 
 
 # ================= GOOGLE SHEET FUNCTIONS =================
@@ -1117,19 +1256,38 @@ elif page == "🎓 Mock Assessment":
         ["Theoretical Knowledge", "Logical Thinking", "Coding Based"]
     )
 
-    # ================= NEW: MCQ COUNT SELECTOR =================
+    # ================= CODING MODE INFO BANNER =================
+    if test_mode == "Coding Based":
+        st.info(
+            "💡 **Coding Based mode** gives you a mixed test:\n\n"
+            "- 🔘 **50% MCQs** — output prediction, debugging, concept questions\n"
+            "- ✍️ **50% Written** — real code writing, evaluated by AI"
+        )
+
+    # ================= MCQ COUNT SELECTOR =================
     mcq_count = st.select_slider(
         "📝 Number of Questions",
         options=[5, 10, 15, 20],
         value=10,
-        help="Choose how many questions you want in your test."
+        help="Total questions in your test. For Coding Based, this is split 50/50."
     )
 
-    # Show estimated time dynamically based on difficulty + count
-    time_per_q = {"Beginner": 12, "Intermediate": 24, "Expert": 36}
-    estimated_seconds = time_per_q[difficulty] * mcq_count
+    # Dynamic time estimate
+    time_per_q = {
+        "Beginner": 12,
+        "Intermediate": 24,
+        "Expert": 36
+    }
+    # Written questions take longer
+    if test_mode == "Coding Based":
+        mcq_half = mcq_count // 2
+        written_half = mcq_count - mcq_half
+        estimated_seconds = (mcq_half * time_per_q[difficulty]) + (written_half * time_per_q[difficulty] * 3)
+    else:
+        estimated_seconds = time_per_q[difficulty] * mcq_count
+
     estimated_minutes = round(estimated_seconds / 60, 1)
-    st.caption(f"⏱️ Estimated time for {mcq_count} questions at {difficulty} level: ~{estimated_minutes} min")
+    st.caption(f"⏱️ Estimated time: ~{estimated_minutes} min")
     # ===========================================================
 
     if "mock_questions" not in st.session_state:
@@ -1150,130 +1308,328 @@ elif page == "🎓 Mock Assessment":
             st.warning("⚠️ Please enter at least one skill.")
             st.stop()
 
-        # Pass mcq_count into generate_mcqs
-        questions = generate_mcqs(skills, difficulty, test_mode, mcq_count)
+        # ================= CODING BASED: SPLIT 50/50 =================
+        if test_mode == "Coding Based":
 
-        if questions and isinstance(questions, list):
-            st.session_state.mock_questions = questions
-            st.session_state.start_time = time.time()
-            # Scale timer based on count too
-            st.session_state.time_limit = get_time_limit(difficulty, mcq_count)
-            st.session_state.exam_submitted = False
-            st.session_state.explanations = {}
-            st.session_state.result_saved = False
-            st.session_state.mcq_count = mcq_count   # store for result display
+            mcq_half = mcq_count // 2
+            written_half = mcq_count - mcq_half  # handles odd numbers (e.g. 5 → 2 MCQ + 3 written)
+
+            with st.spinner(f"Generating {mcq_half} coding MCQs..."):
+                mcq_questions = generate_mcqs(skills, difficulty, "Coding Based", mcq_half)
+
+            with st.spinner(f"Generating {written_half} written coding questions..."):
+                written_questions = generate_coding_written_questions(skills, difficulty, written_half)
+
+            # Tag MCQ questions with type
+            if mcq_questions:
+                for q in mcq_questions:
+                    q["type"] = "mcq"
+
+            # Interleave: written and mcq questions alternated for better UX
+            # Pattern: W, M, W, M ... so user doesn't get all written at end
+            combined = []
+            w_idx, m_idx = 0, 0
+            written_list = written_questions or []
+            mcq_list = mcq_questions or []
+
+            while w_idx < len(written_list) or m_idx < len(mcq_list):
+                if w_idx < len(written_list):
+                    combined.append(written_list[w_idx])
+                    w_idx += 1
+                if m_idx < len(mcq_list):
+                    combined.append(mcq_list[m_idx])
+                    m_idx += 1
+
+            if combined:
+                st.session_state.mock_questions = combined
+                st.session_state.written_evaluations = {}   # stores AI eval results
+            else:
+                st.error("Failed to generate coding questions. Try again.")
+                st.stop()
+
+        # ================= OTHER MODES: ALL MCQ =================
         else:
-            st.error("Failed to generate test questions. Try again.")
+            with st.spinner("Generating questions..."):
+                questions = generate_mcqs(skills, difficulty, test_mode, mcq_count)
 
+            if questions and isinstance(questions, list):
+                for q in questions:
+                    q["type"] = "mcq"
+                st.session_state.mock_questions = questions
+            else:
+                st.error("Failed to generate test questions. Try again.")
+                st.stop()
+
+        # Common setup after generation
+        st.session_state.start_time = time.time()
+        st.session_state.time_limit = get_time_limit(difficulty, mcq_count, test_mode)
+        st.session_state.exam_submitted = False
+        st.session_state.explanations = {}
+        st.session_state.result_saved = False
+        st.session_state.mcq_count = mcq_count
+
+    # ================= DISPLAY TEST =================
     if st.session_state.get("mock_questions"):
 
         auto_submit = False
+        total_questions = len(st.session_state.mock_questions)
 
+        # Timer
         if "start_time" in st.session_state:
             elapsed = int(time.time() - st.session_state.start_time)
-            remaining = st.session_state.time_limit - elapsed
+            remaining_time = st.session_state.time_limit - elapsed
 
-            if remaining <= 0:
+            if remaining_time <= 0:
                 auto_submit = True
                 st.warning("⏰ Time is up! Auto-submitting test...")
             else:
-                minutes = remaining // 60
-                seconds = remaining % 60
+                minutes = remaining_time // 60
+                seconds = remaining_time % 60
                 st.markdown(f"### ⏳ Time Remaining: {minutes:02d}:{seconds:02d}")
 
-        total_questions = len(st.session_state.mock_questions)
+        # ================= QUESTION LOOP =================
+        for i, q in enumerate(st.session_state.mock_questions):
 
+            q_type = q.get("type", "mcq")
+
+            # -------- WRITTEN CODING QUESTION --------
+            if q_type == "written":
+
+                st.markdown(f"### ✍️ Q{i+1}. {q['question']}")
+
+                if q.get("hints"):
+                    st.caption(f"💡 Hint: {q['hints']}")
+
+                # Show text area only if exam not submitted
+                if not st.session_state.get("exam_submitted", False):
+                    st.text_area(
+                        "Write your code / answer here:",
+                        key=f"written_{i}",
+                        height=200,
+                        placeholder="# Write your solution here...\ndef solution():\n    pass"
+                    )
+                else:
+                    # After submission: show what user wrote
+                    user_ans = st.session_state.get(f"written_{i}", "")
+                    st.code(user_ans if user_ans else "No answer provided.", language="python")
+
+                    # Show AI evaluation result if available
+                    eval_result = st.session_state.get("written_evaluations", {}).get(i)
+                    if eval_result:
+                        score_val = eval_result.get("score", 0)
+                        feedback = eval_result.get("feedback", "")
+                        model_ans = eval_result.get("model_answer", "")
+
+                        # Color code the score
+                        if score_val >= 8:
+                            st.success(f"✅ AI Score: {score_val}/10")
+                        elif score_val >= 5:
+                            st.warning(f"⚠️ AI Score: {score_val}/10")
+                        else:
+                            st.error(f"❌ AI Score: {score_val}/10")
+
+                        st.markdown("📘 **Feedback:**")
+                        st.info(feedback)
+
+                        st.markdown("📗 **Model Answer / Approach:**")
+                        st.code(model_ans, language="python")
+
+                    else:
+                        st.info("⏳ Evaluating your answer...")
+
+            # -------- MCQ QUESTION --------
+            else:
+
+                st.markdown(f"### 🔘 Q{i+1}. {q['question']}")
+
+                st.radio(
+                    "",
+                    q["options"],
+                    index=None,
+                    key=f"mock_{i}",
+                    disabled=st.session_state.get("exam_submitted", False)
+                )
+
+                if st.session_state.get("exam_submitted"):
+
+                    correct_answer = q.get("answer")
+                    correct_option = None
+
+                    if isinstance(correct_answer, int):
+                        if correct_answer < len(q["options"]):
+                            correct_option = q["options"][correct_answer]
+                    elif isinstance(correct_answer, str):
+                        correct_answer = correct_answer.strip()
+                        if correct_answer.isdigit():
+                            idx = int(correct_answer)
+                            if 0 <= idx < len(q["options"]):
+                                correct_option = q["options"][idx]
+                        elif correct_answer in q["options"]:
+                            correct_option = correct_answer
+                        elif correct_answer in ["A", "B", "C", "D"]:
+                            index_map = {"A": 0, "B": 1, "C": 2, "D": 3}
+                            idx = index_map[correct_answer]
+                            if idx < len(q["options"]):
+                                correct_option = q["options"][idx]
+
+                    selected = st.session_state.get(f"mock_{i}")
+
+                    if selected == correct_option:
+                        st.success(f"✅ Correct Answer: {correct_option}")
+                    else:
+                        st.error(f"❌ Your Answer: {selected}")
+                        st.info(f"✔ Correct Answer: {correct_option}")
+
+                    st.markdown("📘 **Explanation:**")
+                    st.info(st.session_state.explanations.get(i, "No explanation available."))
+
+            st.divider()
+
+        # ================= SUBMIT BUTTON =================
         if (st.button("Submit Test") or auto_submit) and not st.session_state.get("exam_submitted"):
 
             st.session_state.exam_submitted = True
-            score = 0
+
+            mcq_score = 0
+            mcq_total = 0
+            written_score_total = 0
+            written_total = 0
 
             for i, q in enumerate(st.session_state.mock_questions):
 
-                selected = st.session_state.get(f"mock_{i}")
-                correct_answer = q.get("answer")
-                correct_option = None
+                q_type = q.get("type", "mcq")
 
-                if isinstance(correct_answer, int):
-                    if 0 <= correct_answer < len(q["options"]):
-                        correct_option = q["options"][correct_answer]
-                elif isinstance(correct_answer, str):
-                    correct_answer = correct_answer.strip()
-                    if correct_answer.isdigit():
-                        idx = int(correct_answer)
-                        if 0 <= idx < len(q["options"]):
-                            correct_option = q["options"][idx]
-                    elif correct_answer in q["options"]:
-                        correct_option = correct_answer
-                    elif correct_answer in ["A", "B", "C", "D"]:
-                        index_map = {"A": 0, "B": 1, "C": 2, "D": 3}
-                        idx = index_map[correct_answer]
-                        if idx < len(q["options"]):
-                            correct_option = q["options"][idx]
+                # ---- Score MCQ ----
+                if q_type == "mcq":
+                    mcq_total += 1
+                    selected = st.session_state.get(f"mock_{i}")
+                    correct_answer = q.get("answer")
+                    correct_option = None
 
-                if selected and correct_option:
-                    if selected.strip().lower() == correct_option.strip().lower():
-                        score += 1
+                    if isinstance(correct_answer, int):
+                        if 0 <= correct_answer < len(q["options"]):
+                            correct_option = q["options"][correct_answer]
+                    elif isinstance(correct_answer, str):
+                        correct_answer = correct_answer.strip()
+                        if correct_answer.isdigit():
+                            idx = int(correct_answer)
+                            if 0 <= idx < len(q["options"]):
+                                correct_option = q["options"][idx]
+                        elif correct_answer in q["options"]:
+                            correct_option = correct_answer
+                        elif correct_answer in ["A", "B", "C", "D"]:
+                            index_map = {"A": 0, "B": 1, "C": 2, "D": 3}
+                            idx = index_map[correct_answer]
+                            if idx < len(q["options"]):
+                                correct_option = q["options"][idx]
 
-                if i not in st.session_state.explanations:
-                    explanation = generate_explanation(q["question"], correct_option)
-                    st.session_state.explanations[i] = explanation
+                    if selected and correct_option:
+                        if selected.strip().lower() == correct_option.strip().lower():
+                            mcq_score += 1
 
-            percent = (score / total_questions) * 100
-            st.session_state.final_score = score
-            st.session_state.final_percent = percent
+                    # Generate MCQ explanation
+                    if i not in st.session_state.explanations:
+                        explanation = generate_explanation(q["question"], correct_option)
+                        st.session_state.explanations[i] = explanation
+
+                # ---- Evaluate Written ----
+                elif q_type == "written":
+                    written_total += 1
+                    user_answer = st.session_state.get(f"written_{i}", "")
+
+                    with st.spinner(f"🤖 AI evaluating Q{i+1}..."):
+                        eval_result = evaluate_written_answer(
+                            q["question"],
+                            user_answer,
+                            difficulty
+                        )
+
+                    if "written_evaluations" not in st.session_state:
+                        st.session_state.written_evaluations = {}
+
+                    st.session_state.written_evaluations[i] = eval_result
+                    written_score_total += eval_result.get("score", 0)
+
+            # ================= FINAL SCORE CALCULATION =================
+            # MCQ: each correct = 10 points (normalized to 10)
+            # Written: each question scored 0-10 by AI
+            # Combined: weighted average
+
+            if mcq_total > 0:
+                mcq_percent = (mcq_score / mcq_total) * 100
+            else:
+                mcq_percent = 0
+
+            if written_total > 0:
+                written_percent = (written_score_total / (written_total * 10)) * 100
+            else:
+                written_percent = 0
+
+            # Overall: equal weight between MCQ and written halves
+            if mcq_total > 0 and written_total > 0:
+                overall_percent = (mcq_percent + written_percent) / 2
+            elif mcq_total > 0:
+                overall_percent = mcq_percent
+            else:
+                overall_percent = written_percent
+
+            st.session_state.final_score = mcq_score
+            st.session_state.final_percent = overall_percent
+            st.session_state.mcq_percent = mcq_percent
+            st.session_state.written_percent = written_percent
+            st.session_state.mcq_total = mcq_total
+            st.session_state.written_total = written_total
+            st.session_state.written_score_total = written_score_total
             st.session_state.pop("start_time", None)
             st.session_state.pop("time_limit", None)
 
-        for i, q in enumerate(st.session_state.mock_questions):
-
-            st.markdown(f"### Q{i+1}. {q['question']}")
-
-            selected = st.radio(
-                "",
-                q["options"],
-                index=None,
-                key=f"mock_{i}",
-                disabled=st.session_state.get("exam_submitted", False)
-            )
-
-            if st.session_state.get("exam_submitted"):
-
-                correct_answer = q.get("answer")
-                correct_option = None
-
-                if isinstance(correct_answer, int):
-                    if correct_answer < len(q["options"]):
-                        correct_option = q["options"][correct_answer]
-                elif isinstance(correct_answer, str):
-                    if correct_answer in q["options"]:
-                        correct_option = correct_answer
-                    elif correct_answer in ["A", "B", "C", "D"]:
-                        index_map = {"A": 0, "B": 1, "C": 2, "D": 3}
-                        idx = index_map[correct_answer]
-                        if idx < len(q["options"]):
-                            correct_option = q["options"][idx]
-
-                if selected == correct_option:
-                    st.success(f"✅ Correct Answer: {correct_option}")
-                else:
-                    st.error(f"❌ Your Answer: {selected}")
-                    st.info(f"✔ Correct Answer: {correct_option}")
-
-                st.markdown("📘 **Explanation:**")
-                st.info(st.session_state.explanations.get(i, "No explanation available."))
-
+        # ================= RESULT DISPLAY =================
         if st.session_state.get("exam_submitted"):
 
             st.markdown("## 📊 Test Result")
-            # Score now shows out of actual question count, not hardcoded /10
-            st.markdown(f"### Score: {st.session_state.get('final_score', 0)}/{total_questions}")
-            st.markdown(f"### Percentage: {st.session_state.get('final_percent', 0):.2f}%")
 
+            mcq_total = st.session_state.get("mcq_total", 0)
+            written_total = st.session_state.get("written_total", 0)
+
+            # Show breakdown only for coding mode (has both types)
+            if mcq_total > 0 and written_total > 0:
+
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    st.metric(
+                        "🔘 MCQ Score",
+                        f"{st.session_state.get('final_score', 0)}/{mcq_total}",
+                        f"{st.session_state.get('mcq_percent', 0):.1f}%"
+                    )
+
+                with col2:
+                    written_pts = st.session_state.get("written_score_total", 0)
+                    st.metric(
+                        "✍️ Written Score",
+                        f"{written_pts}/{written_total * 10} pts",
+                        f"{st.session_state.get('written_percent', 0):.1f}%"
+                    )
+
+                with col3:
+                    overall = st.session_state.get("final_percent", 0)
+                    st.metric(
+                        "🏆 Overall Score",
+                        f"{overall:.1f}%"
+                    )
+
+            else:
+                # Pure MCQ test
+                st.markdown(f"### Score: {st.session_state.get('final_score', 0)}/{total_questions}")
+                st.markdown(f"### Percentage: {st.session_state.get('final_percent', 0):.2f}%")
+
+            # Pass/Fail
             if st.session_state.get("final_percent", 0) >= 80:
                 st.success("✅ Qualified (80%+)")
+            elif st.session_state.get("final_percent", 0) >= 60:
+                st.warning("⚠️ Average Performance (60-79%) — Keep practicing!")
             else:
-                st.error("❌ Not Qualified (Below 80%)")
+                st.error("❌ Not Qualified (Below 60%) — Review fundamentals and try again.")
 
             if not st.session_state.get("result_saved"):
                 save_mock_result([
@@ -1283,9 +1639,12 @@ elif page == "🎓 Mock Assessment":
                     candidate_education,
                     skills_input,
                     difficulty,
+                    test_mode,
                     st.session_state.get("final_score", 0),
-                    st.session_state.get("final_percent", 0),
-                    total_questions          # also log how many questions were attempted
+                    round(st.session_state.get("final_percent", 0), 2),
+                    total_questions,
+                    mcq_total,
+                    written_total
                 ])
                 st.session_state.result_saved = True
 

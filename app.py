@@ -79,7 +79,7 @@ warnings.filterwarnings("ignore")
 
 # ================= PAGE CONFIG =================
 st.set_page_config(
-    page_title="SkillForge – Skill Intelligence Platform",,
+    page_title="SkillForge – Skill Intelligence Platform",
     page_icon="⚙️",
     layout="wide"
 )

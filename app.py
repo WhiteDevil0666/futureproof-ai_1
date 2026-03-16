@@ -79,8 +79,8 @@ warnings.filterwarnings("ignore")
 
 # ================= PAGE CONFIG =================
 st.set_page_config(
-    page_title="FutureProof Skill Intelligence",
-    page_icon="🚀",
+    page_title="SkillForge – Skill Intelligence Platform",,
+    page_icon="⚙️",
     layout="wide"
 )
 
@@ -131,8 +131,8 @@ def apply_custom_css():
 
 apply_custom_css()
 
-st.markdown('<div class="main-title">🚀 FutureProof Skill Intelligence Engine</div>', unsafe_allow_html=True)
-st.caption("Analyze Your Skills. Understand Your Domain. Evaluate Market Reality.")
+st.markdown('<div class="main-title">⚙️ SkillForge – Skill Intelligence Engine</div>', unsafe_allow_html=True)
+st.caption("Analyze Skills • Detect Gaps • Build Career Intelligence")
 
 # ================= ENV CONFIG =================
 ADMIN_USERNAME = os.getenv("ADMIN_USER")
@@ -164,7 +164,7 @@ page = st.sidebar.radio("", [
     "📚 Guided Study Chat",
     "🤖 AI Learning Agent",
     "🎤 AI Interview Simulator",
-    "💼 AI Job Finder (Premium)",
+    "💼 AI Job Finder",
     "🔐 Admin Portal",
 ])
 

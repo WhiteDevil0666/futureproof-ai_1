@@ -1117,18 +1117,31 @@ elif page == "🎓 Mock Assessment":
         ["Theoretical Knowledge", "Logical Thinking", "Coding Based"]
     )
 
+    # ================= NEW: MCQ COUNT SELECTOR =================
+    mcq_count = st.select_slider(
+        "📝 Number of Questions",
+        options=[5, 10, 15, 20],
+        value=10,
+        help="Choose how many questions you want in your test."
+    )
+
+    # Show estimated time dynamically based on difficulty + count
+    time_per_q = {"Beginner": 12, "Intermediate": 24, "Expert": 36}
+    estimated_seconds = time_per_q[difficulty] * mcq_count
+    estimated_minutes = round(estimated_seconds / 60, 1)
+    st.caption(f"⏱️ Estimated time for {mcq_count} questions at {difficulty} level: ~{estimated_minutes} min")
+    # ===========================================================
+
     if "mock_questions" not in st.session_state:
         st.session_state.mock_questions = []
 
     if st.button("Generate Test"):
 
-        # FIX 3: Explicit st.stop() after bool check
         if not check_request_limit():
             st.stop()
 
         skills = normalize_skills(skills_input)
 
-        # FIX 6: Validate skills
         if not skills and skills_input.strip():
             st.warning("⚠️ No valid skills detected. Use comma-separated names (e.g. Python, SQL, Excel).")
             st.stop()
@@ -1137,15 +1150,18 @@ elif page == "🎓 Mock Assessment":
             st.warning("⚠️ Please enter at least one skill.")
             st.stop()
 
-        questions = generate_mcqs(skills, difficulty, test_mode)
+        # Pass mcq_count into generate_mcqs
+        questions = generate_mcqs(skills, difficulty, test_mode, mcq_count)
 
         if questions and isinstance(questions, list):
             st.session_state.mock_questions = questions
             st.session_state.start_time = time.time()
-            st.session_state.time_limit = get_time_limit(difficulty)
+            # Scale timer based on count too
+            st.session_state.time_limit = get_time_limit(difficulty, mcq_count)
             st.session_state.exam_submitted = False
             st.session_state.explanations = {}
             st.session_state.result_saved = False
+            st.session_state.mcq_count = mcq_count   # store for result display
         else:
             st.error("Failed to generate test questions. Try again.")
 
@@ -1164,6 +1180,8 @@ elif page == "🎓 Mock Assessment":
                 minutes = remaining // 60
                 seconds = remaining % 60
                 st.markdown(f"### ⏳ Time Remaining: {minutes:02d}:{seconds:02d}")
+
+        total_questions = len(st.session_state.mock_questions)
 
         if (st.button("Submit Test") or auto_submit) and not st.session_state.get("exam_submitted"):
 
@@ -1201,7 +1219,7 @@ elif page == "🎓 Mock Assessment":
                     explanation = generate_explanation(q["question"], correct_option)
                     st.session_state.explanations[i] = explanation
 
-            percent = (score / len(st.session_state.mock_questions)) * 100
+            percent = (score / total_questions) * 100
             st.session_state.final_score = score
             st.session_state.final_percent = percent
             st.session_state.pop("start_time", None)
@@ -1248,7 +1266,8 @@ elif page == "🎓 Mock Assessment":
         if st.session_state.get("exam_submitted"):
 
             st.markdown("## 📊 Test Result")
-            st.markdown(f"### Score: {st.session_state.get('final_score', 0)}/10")
+            # Score now shows out of actual question count, not hardcoded /10
+            st.markdown(f"### Score: {st.session_state.get('final_score', 0)}/{total_questions}")
             st.markdown(f"### Percentage: {st.session_state.get('final_percent', 0):.2f}%")
 
             if st.session_state.get("final_percent", 0) >= 80:
@@ -1265,10 +1284,10 @@ elif page == "🎓 Mock Assessment":
                     skills_input,
                     difficulty,
                     st.session_state.get("final_score", 0),
-                    st.session_state.get("final_percent", 0)
+                    st.session_state.get("final_percent", 0),
+                    total_questions          # also log how many questions were attempted
                 ])
                 st.session_state.result_saved = True
-
 
 # ==========================================================
 # ================= GUIDED STUDY CHAT ======================

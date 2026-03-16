@@ -1,19 +1,23 @@
 # ==========================================================
-# FUTUREPROOF AI – v3.0 Production Build
+# FUTUREPROOF AI – v4.0 Production Build
 # ──────────────────────────────────────────────────────────
-# MINOR FIXES (v3):
-#   FIX-1  FAISS dynamic embedding dimension (model-agnostic)
-#   FIX-2  JSON parser + roadmap/interview dict key unwrap
+# v3 FIXES:
+#   FIX-1  FAISS dynamic embedding dimension
+#   FIX-2  JSON parser + roadmap/interview key unwrap
 #   FIX-3  Request log auto-cleanup (prune > 500 sessions)
 #   FIX-4  Resume extraction first 2000 + last 1000 chars
 #
-# ARCHITECTURAL UPGRADES (v3):
-#   UP-4   AI Interview Simulator — 5 rounds, live scoring,
-#          per-answer feedback + final debrief report
-#   UP-5   Real Job Aggregation via SerpAPI (styled cards)
-#          with fallback to direct search links
+# v3 UPGRADES:
+#   UP-4   AI Interview Simulator — 5 rounds, live scoring
+#   UP-5   Real Job Aggregation via SerpAPI
 #   UP-6   ChromaDB persistent vector memory (FAISS fallback)
-#          with dynamic embedding dimension fix
+#
+# v4 UPGRADES:
+#   UP-7   Job Skill Matching Score — cosine similarity +
+#          keyword overlap vs pasted Job Description
+#   UP-8   AI Learning Agent — full adaptive study loop:
+#          generate plan → explain → quiz → re-explain →
+#          mastery report (all via Google Sheets)
 # ==========================================================
 
 import streamlit as st
@@ -158,6 +162,7 @@ page = st.sidebar.radio("", [
     "🔎 Skill Intelligence",
     "🎓 Mock Assessment",
     "📚 Guided Study Chat",
+    "🤖 AI Learning Agent",
     "🎤 AI Interview Simulator",
     "💼 AI Job Finder (Premium)",
     "🔐 Admin Portal",
@@ -181,6 +186,12 @@ if page != "💼 AI Job Finder (Premium)":
 if page != "🎤 AI Interview Simulator":
     for k in ["interview_started", "interview_messages", "interview_context",
               "interview_round", "interview_score_log", "interview_complete"]:
+        st.session_state.pop(k, None)
+
+if page != "🤖 AI Learning Agent":
+    for k in ["agent_started", "agent_plan", "agent_step", "agent_messages",
+              "agent_quiz", "agent_quiz_submitted", "agent_scores",
+              "agent_topic", "agent_level", "agent_name"]:
         st.session_state.pop(k, None)
 
 # ================= SESSION TRACKING =================
@@ -908,6 +919,204 @@ margin-bottom:12px;border:1px solid rgba(255,255,255,0.1);">
 </div>""", unsafe_allow_html=True)
 
 
+# ═══════════════════════════════════════════════════════════
+# UP-7: JOB SKILL MATCHING SCORE (cosine similarity vs JD)
+# ═══════════════════════════════════════════════════════════
+
+def compute_job_match_score(user_skills: list, jd_text: str) -> dict:
+    """
+    Computes a job match score between user skills and a job description.
+
+    Two-layer approach:
+      Layer 1 — Semantic similarity via sentence-transformers (0-100)
+      Layer 2 — Keyword overlap: how many JD skill keywords the user has
+
+    Returns dict with: overall_score, semantic_score, keyword_score,
+                       matched_keywords, missing_keywords, breakdown_label
+    """
+    if not jd_text or not jd_text.strip():
+        return {}
+
+    # ── Layer 1: Semantic similarity ─────────────────────
+    semantic_score = 0
+    if _ST_AVAILABLE:
+        try:
+            embedder    = _get_embedder()
+            skills_text = ", ".join(user_skills)
+            emb_skills  = embedder.encode([skills_text],  normalize_embeddings=True)
+            emb_jd      = embedder.encode([jd_text[:1500]], normalize_embeddings=True)
+            # cosine similarity = dot product of normalised vectors
+            cos_sim      = float(np.dot(emb_skills[0], emb_jd[0]))
+            semantic_score = round(max(0, min(cos_sim, 1)) * 100, 1)
+        except Exception as e:
+            print("Embedding error:", e)
+
+    # ── Layer 2: Keyword overlap ──────────────────────────
+    # Extract skill-like tokens from JD (2+ chars, alphabetic/numeric)
+    jd_lower   = jd_text.lower()
+    user_lower = set(s.lower().strip() for s in user_skills)
+
+    # Common tech skill keywords to look for in JD
+    jd_words   = set(re.findall(r"\b[a-z][a-z0-9+#.\-]{1,30}\b", jd_lower))
+    # Filter to words that look like skills (not stopwords)
+    stopwords  = {"and","the","for","with","using","have","will","able","work",
+                  "team","good","strong","knowledge","experience","understanding",
+                  "proficiency","familiarity","years","role","position","job",
+                  "responsibilities","requirements","preferred","plus","etc"}
+    jd_skills  = jd_words - stopwords
+
+    matched  = sorted(user_lower & jd_skills)
+    missing  = sorted(jd_skills - user_lower - stopwords)[:15]   # top 15 missing
+
+    keyword_score = round(len(matched) / max(len(jd_skills), 1) * 100, 1)
+    keyword_score = min(keyword_score, 100)
+
+    # ── Combined score (60% semantic + 40% keyword) ───────
+    if _ST_AVAILABLE:
+        overall = round(semantic_score * 0.60 + keyword_score * 0.40, 1)
+    else:
+        overall = keyword_score   # fallback if no embeddings
+
+    label = (
+        "🟢 Excellent Match"  if overall >= 75 else
+        "🟡 Good Match"       if overall >= 55 else
+        "🟠 Partial Match"    if overall >= 35 else
+        "🔴 Low Match"
+    )
+
+    return {
+        "overall_score":    overall,
+        "semantic_score":   semantic_score,
+        "keyword_score":    keyword_score,
+        "matched_keywords": matched[:20],
+        "missing_keywords": missing,
+        "label":            label,
+    }
+
+
+def save_job_match(data_row: list):
+    try:
+        gc = _gs_client()
+        try:    sheet = gc.open("FutureProof_Job_Matches").sheet1
+        except: sheet = gc.create("FutureProof_Job_Matches").sheet1
+        sheet.append_row(data_row)
+    except Exception as e:
+        print("Job Match Sheet Error:", e)
+
+
+# ═══════════════════════════════════════════════════════════
+# UP-8: AI LEARNING AGENT (adaptive study loop)
+# ═══════════════════════════════════════════════════════════
+
+def generate_learning_plan(topic: str, level: str, goal: str) -> list:
+    """
+    Generates an ordered list of subtopics/modules for a topic.
+    Returns list of dicts: [{step, title, objective}]
+    """
+    prompt = f"""
+You are an expert curriculum designer.
+
+Topic: {topic}
+Level: {level}
+Goal: {goal or "Thorough understanding"}
+
+Break this topic into 5-7 sequential learning modules.
+Each module should build on the previous one.
+
+Return ONLY valid JSON array — no markdown:
+[{{"step":1,"title":"Module Title","objective":"What the learner can do after this module"}}]
+"""
+    r = safe_llm_call(MAIN_MODEL, [
+        {"role": "system", "content": "Return ONLY valid JSON array."},
+        {"role": "user",   "content": prompt},
+    ], temperature=0.3)
+    data = safe_json_load(r)
+    return data if isinstance(data, list) else []
+
+
+def generate_module_explanation(topic: str, module_title: str,
+                                 module_objective: str, level: str,
+                                 education: str, past_context: str = "") -> str:
+    """AI explains the current learning module."""
+    context_line = f"\nWhat student already knows: {past_context[:400]}" if past_context else ""
+    prompt = (
+        f"Expert tutor. Topic: {topic}. Level: {level}. Student background: {education}.\n"
+        f"Teach this module: {module_title}\n"
+        f"Objective: {module_objective}{context_line}\n"
+        f"Rules: clear headings, concrete examples, end with a 1-line summary of what was covered. "
+        f"Keep under 300 words."
+    )
+    return safe_llm_call(MAIN_MODEL, [{"role": "user", "content": prompt}], temperature=0.4) or \
+           f"Module: {module_title} — explanation unavailable."
+
+
+def generate_module_quiz(topic: str, module_title: str, level: str) -> list:
+    """Generates 3 MCQs to test the current module. Returns list of MCQ dicts."""
+    prompt = f"""
+Create 3 multiple choice questions to test understanding of:
+Topic: {topic} | Module: {module_title} | Difficulty: {level}
+
+Return ONLY valid JSON array:
+[{{"question":"text","options":["A","B","C","D"],"answer":0,"explanation":"1-line why"}}]
+- Exactly 4 options per question
+- answer = index 0-3
+- No markdown
+"""
+    r = safe_llm_call(MCQ_MODEL, [
+        {"role": "system", "content": "Return ONLY valid JSON array."},
+        {"role": "user",   "content": prompt},
+    ], temperature=0.4)
+    data = safe_json_load(r)
+    return data if isinstance(data, list) else []
+
+
+def generate_re_explanation(topic: str, module_title: str, level: str,
+                             wrong_questions: list) -> str:
+    """Re-explains the module differently when student scores < 60%."""
+    wrongs = "; ".join(q.get("question","")[:60] for q in wrong_questions)
+    prompt = (
+        f"The student struggled with: {wrongs}.\n"
+        f"Re-explain '{module_title}' in '{topic}' at {level} level using a completely different "
+        f"approach — use analogies, a worked example, or a visual description. "
+        f"Under 250 words. End with one key takeaway sentence."
+    )
+    return safe_llm_call(MAIN_MODEL, [{"role": "user", "content": prompt}], temperature=0.5) or \
+           "Let's try a different approach for this module."
+
+
+def generate_mastery_report(name: str, topic: str, plan: list, scores: list) -> str:
+    """Final mastery report after all modules complete."""
+    summary = "\n".join(
+        f"Module {i+1} ({p.get('title','')[:40]}): {s}%" for i, (p, s) in enumerate(zip(plan, scores))
+    )
+    avg = round(sum(scores) / len(scores)) if scores else 0
+    prompt = f"""
+Student: {name} | Topic: {topic}
+Module scores:
+{summary}
+Average: {avg}%
+
+Write a concise mastery report (6-8 lines):
+1. Overall mastery level
+2. Strongest modules
+3. Modules needing review
+4. One actionable next step
+5. Encouragement
+
+Be direct and motivating.
+"""
+    return safe_llm_call(MCQ_MODEL, [{"role": "user", "content": prompt}], temperature=0.4) or \
+           f"Topic complete! Average score: {avg}%."
+
+
+def save_agent_progress(data_row: list):
+    try:
+        gc = _gs_client()
+        try:    sheet = gc.open("FutureProof_Agent_Progress").sheet1
+        except: sheet = gc.create("FutureProof_Agent_Progress").sheet1
+        sheet.append_row(data_row)
+    except Exception as e:
+        print("Agent Progress Sheet Error:", e)
 
 
 def generate_mcqs(skills, difficulty, test_mode, mcq_count=10):
@@ -1856,7 +2065,20 @@ elif page == "💼 AI Job Finder (Premium)":
         type=["pdf","png","jpg","jpeg"]
     )
 
-    if st.button("🔍 Find Suitable Jobs"):
+    # UP-7: Job Description paste for match scoring
+    st.divider()
+    st.markdown("### 📋 Paste a Job Description (Optional — for Match Score)")
+    jd_text = st.text_area(
+        "Paste the full job description here",
+        height=160,
+        placeholder="Paste the job description you want to apply for…\nThe AI will compute your skill match score.",
+        key="jd_text_input",
+    )
+    if jd_text:
+        st.caption("✅ Job description loaded — match score will be computed after analysis.")
+
+    st.divider()
+    if st.button("🔍 Analyze & Find Jobs", use_container_width=True):
         if name and skills_input and target_role:
             if not check_request_limit(): st.stop()
 
@@ -1906,15 +2128,12 @@ elif page == "💼 AI Job Finder (Premium)":
                     if extracted_resume_skills:
                         st.success(f"🎯 **{len(extracted_resume_skills)} skills detected in resume:**")
                         st.write(", ".join(s.title() for s in extracted_resume_skills))
-
-                        # Merge — show what's new vs user-entered
                         user_set = set(skills)
                         ext_set  = set(s.lower() for s in extracted_resume_skills)
                         new_only = ext_set - user_set
                         if new_only:
                             st.info(f"➕ **{len(new_only)} additional skills found in resume** (added to analysis): "
                                     f"{', '.join(s.title() for s in sorted(new_only))}")
-                        # Merge for the prompt
                         skills = list(user_set | ext_set)
 
                 prompt = f"""
@@ -1945,7 +2164,54 @@ Provide:
             st.markdown("## 🎯 AI Career Recommendations")
             st.markdown(response)
 
-            # UP-5: Live job cards via SerpAPI (if key set), else fallback links
+            # ── UP-7: Job Match Score vs pasted JD ────────────
+            if jd_text and jd_text.strip():
+                st.divider()
+                st.markdown("## 🎯 Job Description Match Score")
+                with st.spinner("🔢 Computing skill match score…"):
+                    match = compute_job_match_score(skills, jd_text)
+
+                if match:
+                    overall = match["overall_score"]
+                    bar_col = ("#22c55e" if overall >= 75 else
+                               "#f59e0b" if overall >= 55 else
+                               "#f97316" if overall >= 35 else "#ef4444")
+
+                    c1, c2, c3 = st.columns(3)
+                    with c1: st.metric("🎯 Overall Match",   f"{overall}%")
+                    with c2: st.metric("🧠 Semantic Score",  f"{match['semantic_score']}%")
+                    with c3: st.metric("🔑 Keyword Score",   f"{match['keyword_score']}%")
+
+                    st.markdown(f"""
+<div style="background:rgba(255,255,255,0.08);border-radius:10px;padding:4px;margin:8px 0 12px 0;">
+  <div style="background:{bar_col};width:{overall}%;height:14px;border-radius:8px;"></div>
+</div>""", unsafe_allow_html=True)
+
+                    st.markdown(f"**{match['label']}** — {overall}% alignment between your profile and this job.")
+
+                    col_m, col_miss = st.columns(2)
+                    with col_m:
+                        st.markdown("#### ✅ Matched Keywords")
+                        if match["matched_keywords"]:
+                            st.success(", ".join(match["matched_keywords"][:15]))
+                        else:
+                            st.caption("No keyword matches found.")
+                    with col_miss:
+                        st.markdown("#### ❌ Keywords in JD You're Missing")
+                        if match["missing_keywords"]:
+                            st.error(", ".join(match["missing_keywords"][:15]))
+                        else:
+                            st.caption("No major gaps detected.")
+
+                    # Save match to Sheets
+                    save_job_match([
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        name, target_role, overall,
+                        match["semantic_score"], match["keyword_score"],
+                        len(match["matched_keywords"]), len(match["missing_keywords"]),
+                    ])
+
+            # ── UP-5: Live job cards ───────────────────────────
             st.divider()
             with st.spinner("🔍 Fetching live job listings…"):
                 live_jobs = fetch_real_jobs(target_role, location="India", num=6)
@@ -2263,6 +2529,328 @@ elif page == "🎤 AI Interview Simulator":
 
 
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ████████████████████  AI LEARNING AGENT  ████████████████████████████████████
+# ══════════════════════════════════════════════════════════════════════════════
+
+elif page == "🤖 AI Learning Agent":
+
+    st.header("🤖 AI Learning Agent")
+    st.caption("Adaptive study loop — AI teaches, quizzes, re-explains, and tracks your mastery.")
+    st.session_state.current_feature = "AI_Learning_Agent"
+
+    # ── Setup form (shown until agent_started is True) ────
+    if not st.session_state.get("agent_started"):
+
+        col1, col2 = st.columns(2)
+        with col1:
+            ag_name  = st.text_input("Your Name",     key="ag_name_input")
+            ag_topic = st.text_input("Topic to Master",
+                placeholder="e.g. Python, Machine Learning, SQL, React…")
+        with col2:
+            ag_edu   = st.text_input("Education Level",
+                placeholder="e.g. B.Tech, 12th Grade, Self-taught…")
+            ag_level = st.selectbox("Difficulty Level",
+                ["Beginner", "Intermediate", "Expert"])
+
+        ag_goal = st.text_input("Learning Goal (optional)",
+            placeholder="e.g. Crack interviews, Build projects, Pass exam…")
+
+        st.info(
+            "🔄 **How the AI Learning Agent works:**\n\n"
+            "1. Generates a personalised 5–7 module learning plan for your topic\n"
+            "2. Teaches each module with structured explanation + examples\n"
+            "3. Quizzes you after every module (3 questions)\n"
+            "4. Score ≥ 60% → proceed to next module\n"
+            "5. Score < 60% → AI re-explains using a completely different approach\n"
+            "6. Tracks your mastery score across all modules\n"
+            "7. Generates a final AI Mastery Report"
+        )
+
+        if st.button("🚀 Start Learning", use_container_width=True):
+            if not ag_name or not ag_topic:
+                st.warning("⚠️ Please enter your name and the topic to study.")
+            else:
+                if not check_request_limit(): st.stop()
+                with st.spinner("🧠 Building your personalised learning plan…"):
+                    plan = generate_learning_plan(ag_topic, ag_level, ag_goal)
+                if not plan:
+                    st.error("Could not generate learning plan. Please try again."); st.stop()
+
+                st.session_state.agent_started  = True
+                st.session_state.agent_name     = ag_name
+                st.session_state.agent_topic    = ag_topic
+                st.session_state.agent_edu      = ag_edu or "General"
+                st.session_state.agent_level    = ag_level
+                st.session_state.agent_goal     = ag_goal
+                st.session_state.agent_plan     = plan
+                st.session_state.agent_step     = 0
+                st.session_state.agent_scores   = []
+                st.session_state.agent_phase    = "explain"
+                st.session_state.agent_quiz     = None
+                st.session_state.agent_quiz_submitted = False
+                st.session_state.current_user   = ag_name
+                st.rerun()
+
+    # ── Active adaptive learning loop ─────────────────────
+    else:
+        name_ag  = st.session_state.agent_name
+        topic_ag = st.session_state.agent_topic
+        level_ag = st.session_state.agent_level
+        edu_ag   = st.session_state.agent_edu
+        plan     = st.session_state.agent_plan
+        step     = st.session_state.agent_step
+        scores   = st.session_state.agent_scores
+        phase    = st.session_state.agent_phase
+        total    = len(plan)
+
+        # Progress bar
+        prog_pct = min(step / total, 1.0)
+        st.progress(prog_pct)
+        if step < total:
+            st.markdown(f"**Module {step + 1} of {total} — {plan[step].get('title', '')}**")
+        else:
+            st.markdown("**✅ All modules complete!**")
+
+        # Sidebar live mastery tracker
+        if scores:
+            st.sidebar.markdown("---")
+            st.sidebar.markdown("### 📊 Live Mastery")
+            avg_live = round(sum(scores) / len(scores))
+            st.sidebar.metric("Average Score", f"{avg_live}%")
+            for i, s in enumerate(scores):
+                icon = "🟢" if s >= 80 else "🟡" if s >= 60 else "🔴"
+                st.sidebar.caption(f"{icon} Module {i + 1}: {s}%")
+
+        # ── EXPLAIN phase ─────────────────────────────────
+        if phase == "explain" and step < total:
+            module  = plan[step]
+            msg_key = f"explain_{step}"
+
+            if msg_key not in st.session_state:
+                past_ctx = " → ".join(
+                    plan[i].get("title", "") for i in range(step)
+                ) if step > 0 else ""
+                with st.spinner(f"📖 Teaching: {module.get('title', '')}…"):
+                    explanation = generate_module_explanation(
+                        topic_ag, module.get("title", ""),
+                        module.get("objective", ""), level_ag, edu_ag, past_ctx,
+                    )
+                st.session_state[msg_key] = explanation
+
+            st.markdown(f"### 📖 Module {step + 1}: {module.get('title', '')}")
+            st.markdown(f"*Objective: {module.get('objective', '')}*")
+            st.divider()
+            st.markdown(st.session_state[msg_key])
+            st.divider()
+
+            if st.button("✅ I understood this — Take the Quiz", use_container_width=True):
+                if not check_request_limit(): st.stop()
+                with st.spinner("📝 Generating quiz…"):
+                    quiz = generate_module_quiz(topic_ag, module.get("title", ""), level_ag)
+                st.session_state.agent_quiz           = quiz
+                st.session_state.agent_quiz_submitted = False
+                st.session_state.agent_phase          = "quiz"
+                st.rerun()
+
+        # ── QUIZ phase ────────────────────────────────────
+        elif phase == "quiz" and step < total:
+            module = plan[step]
+            quiz   = st.session_state.agent_quiz or []
+
+            st.markdown(f"### 📝 Quiz — Module {step + 1}: {module.get('title', '')}")
+            st.caption("Answer all questions, then submit.")
+
+            # Empty quiz fallback
+            if not quiz:
+                st.warning("Quiz generation failed. Crediting module and moving on.")
+                st.session_state.agent_scores.append(60)
+                nxt = step + 1
+                st.session_state.agent_step  = nxt
+                st.session_state.agent_phase = "explain" if nxt < total else "done"
+                st.rerun()
+
+            for qi, q in enumerate(quiz):
+                st.markdown(f"**Q{qi + 1}. {q.get('question', '')}**")
+                st.radio(
+                    "", q.get("options", []),
+                    index=None,
+                    key=f"aq_{step}_{qi}",
+                    disabled=st.session_state.agent_quiz_submitted,
+                )
+
+            if not st.session_state.agent_quiz_submitted:
+                if st.button("Submit Quiz", use_container_width=True):
+                    correct  = 0
+                    wrong_qs = []
+                    for qi, q in enumerate(quiz):
+                        ans_idx     = q.get("answer", 0)
+                        correct_opt = (q["options"][ans_idx]
+                                       if ans_idx < len(q.get("options", [])) else "")
+                        selected = st.session_state.get(f"aq_{step}_{qi}")
+                        if selected and selected == correct_opt:
+                            correct += 1
+                        else:
+                            wrong_qs.append(q)
+                    pct = round(correct / len(quiz) * 100) if quiz else 0
+                    st.session_state.agent_quiz_submitted          = True
+                    st.session_state[f"quiz_result_{step}"]        = {
+                        "pct": pct, "correct": correct,
+                        "total": len(quiz), "wrong": wrong_qs,
+                    }
+                    st.rerun()
+
+            # Results display (post-submit)
+            if st.session_state.agent_quiz_submitted:
+                result = st.session_state.get(f"quiz_result_{step}", {})
+                pct    = result.get("pct", 0)
+                wrong  = result.get("wrong", [])
+
+                for qi, q in enumerate(quiz):
+                    ans_idx     = q.get("answer", 0)
+                    correct_opt = (q["options"][ans_idx]
+                                   if ans_idx < len(q.get("options", [])) else "")
+                    selected = st.session_state.get(f"aq_{step}_{qi}")
+                    if selected == correct_opt:
+                        st.success(f"Q{qi + 1} ✅  {correct_opt}")
+                    else:
+                        st.error(
+                            f"Q{qi + 1} ❌  Your answer: {selected or '(none)'}"
+                            f"  |  Correct: {correct_opt}"
+                        )
+                    if q.get("explanation"):
+                        st.caption(f"💡 {q['explanation']}")
+
+                st.divider()
+                score_col = "#22c55e" if pct >= 80 else "#f59e0b" if pct >= 60 else "#ef4444"
+                st.markdown(
+                    f'<div style="background:rgba(255,255,255,0.08);border-radius:12px;'
+                    f'padding:16px;text-align:center;">'
+                    f'<h2 style="color:{score_col};margin:0;">{pct}%</h2>'
+                    f'<p style="color:#94a3b8;margin:4px 0;">Module {step + 1} Score</p>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+                st.markdown("")
+
+                # ── PASS: move forward ────────────────────
+                if pct >= 60:
+                    st.success(
+                        f"✅ {'Excellent mastery!' if pct >= 80 else 'Good — moving to next module.'}"
+                    )
+                    scores.append(pct)
+                    st.session_state.agent_scores = scores
+
+                    if st.button("Next Module ➡️", use_container_width=True):
+                        nxt = step + 1
+                        st.session_state.agent_step  = nxt
+                        st.session_state.agent_phase = "explain" if nxt < total else "done"
+                        st.session_state.agent_quiz  = None
+                        st.session_state.agent_quiz_submitted = False
+                        st.rerun()
+
+                # ── FAIL: re-explain then retry ───────────
+                else:
+                    st.warning(
+                        f"⚠️ {pct}% — below 60%. "
+                        f"The AI will re-explain this module differently before you retry."
+                    )
+                    re_key = f"reexplain_{step}"
+                    if re_key not in st.session_state:
+                        with st.spinner("🔄 Generating alternative explanation…"):
+                            re_exp = generate_re_explanation(
+                                topic_ag, module.get("title", ""), level_ag, wrong
+                            )
+                        st.session_state[re_key] = re_exp
+
+                    st.divider()
+                    st.markdown("### 🔄 Alternative Explanation")
+                    st.info(st.session_state[re_key])
+
+                    if st.button("Try Quiz Again 🔁", use_container_width=True):
+                        if not check_request_limit(): st.stop()
+                        with st.spinner("📝 Generating a new quiz attempt…"):
+                            new_quiz = generate_module_quiz(
+                                topic_ag, module.get("title", ""), level_ag
+                            )
+                        # Credit partial attempt so student can advance
+                        scores.append(max(pct, 40))
+                        st.session_state.agent_scores         = scores
+                        st.session_state.agent_quiz           = new_quiz
+                        st.session_state.agent_quiz_submitted = False
+                        st.session_state.pop(re_key, None)
+                        st.session_state[f"quiz_result_{step}"] = {}
+                        nxt = step + 1
+                        st.session_state.agent_step  = nxt
+                        st.session_state.agent_phase = "explain" if nxt < total else "done"
+                        st.rerun()
+
+        # ── DONE phase — mastery report ───────────────────
+        elif phase == "done" or step >= total:
+            st.divider()
+            st.markdown("## 🏆 Learning Complete — Mastery Report")
+
+            final_scores = st.session_state.agent_scores
+            if final_scores:
+                avg     = round(sum(final_scores) / len(final_scores))
+                bar_col = "#22c55e" if avg >= 80 else "#f59e0b" if avg >= 60 else "#ef4444"
+
+                c1, c2, c3 = st.columns(3)
+                with c1: st.metric("🏆 Avg Mastery",  f"{avg}%")
+                with c2: st.metric("✅ Modules Done", len(final_scores))
+                with c3: st.metric("📚 Topic",        topic_ag)
+
+                st.markdown(
+                    f'<div style="background:rgba(255,255,255,0.08);border-radius:10px;'
+                    f'padding:4px;margin:8px 0 16px 0;">'
+                    f'<div style="background:{bar_col};width:{avg}%;'
+                    f'height:14px;border-radius:8px;"></div></div>',
+                    unsafe_allow_html=True,
+                )
+
+                if   avg >= 80: st.success("✅ **Strong mastery** — you're ready to apply this knowledge.")
+                elif avg >= 60: st.warning("⚠️ **Good progress** — review the weaker modules before moving on.")
+                else:           st.error("❌ **Needs more practice** — revisit this topic with a lower difficulty.")
+
+                st.markdown("### 📊 Module-by-Module Breakdown")
+                for i, (mod, sc) in enumerate(zip(plan[:len(final_scores)], final_scores)):
+                    icon = "🟢" if sc >= 80 else "🟡" if sc >= 60 else "🔴"
+                    st.markdown(f"{icon} **Module {i + 1} — {mod.get('title', '')}**: {sc}%")
+
+                st.divider()
+                st.markdown("### 🤖 AI Mastery Report")
+                with st.spinner("Generating your personalised mastery report…"):
+                    report = generate_mastery_report(name_ag, topic_ag, plan, final_scores)
+                st.info(report)
+
+                save_agent_progress([
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    name_ag, topic_ag, level_ag, edu_ag,
+                    total, len(final_scores), avg,
+                    json.dumps(final_scores),
+                ])
+            else:
+                st.info("No module scores recorded yet.")
+
+            if st.button("🔄 Start New Topic", use_container_width=True):
+                keys_to_clear = [
+                    "agent_started", "agent_plan", "agent_step", "agent_messages",
+                    "agent_quiz", "agent_quiz_submitted", "agent_scores",
+                    "agent_topic", "agent_level", "agent_name", "agent_phase",
+                    "agent_edu", "agent_goal",
+                ]
+                for k in keys_to_clear:
+                    st.session_state.pop(k, None)
+                for k in list(st.session_state.keys()):
+                    if k.startswith(("explain_", "reexplain_", "quiz_result_", "aq_")):
+                        del st.session_state[k]
+                st.rerun()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ████████████████████████  ADMIN PORTAL  █████████████████████████████████████
+# ══════════════════════════════════════════════════════════════════════════════
 
 elif page == "🔐 Admin Portal":
 

@@ -1,21 +1,19 @@
 # ==========================================================
-# FUTUREPROOF AI – v2.0 Production Build
+# FUTUREPROOF AI – v3.0 Production Build
 # ──────────────────────────────────────────────────────────
-# BUG FIXES:
-#   FIX-A  OCR Tesseract path validation + graceful fallback
-#   FIX-B  MCQ dict wrapper unwrap in safe_json_load
-#   FIX-C  Exponential backoff for Groq 429 rate limits
-#   FIX-D  File-based session request tracking (bypass-proof)
+# MINOR FIXES (v3):
+#   FIX-1  FAISS dynamic embedding dimension (model-agnostic)
+#   FIX-2  JSON parser + roadmap/interview dict key unwrap
+#   FIX-3  Request log auto-cleanup (prune > 500 sessions)
+#   FIX-4  Resume extraction first 2000 + last 1000 chars
 #
-# MAJOR UPGRADES:
-#   UP-1   AI Learning Path — week-by-week roadmap
-#   UP-2   Skill Gap Detection vs inferred role
-#   UP-3   Resume Skill Extraction AI (PDF + image)
-#
-# PERFORMANCE:
-#   PERF-1 MCQ generation caching (@st.cache_data)
-#   PERF-2 Compressed Guided Study system prompt
-#   PERF-3 FAISS vector memory for Study Chat
+# ARCHITECTURAL UPGRADES (v3):
+#   UP-4   AI Interview Simulator — 5 rounds, live scoring,
+#          per-answer feedback + final debrief report
+#   UP-5   Real Job Aggregation via SerpAPI (styled cards)
+#          with fallback to direct search links
+#   UP-6   ChromaDB persistent vector memory (FAISS fallback)
+#          with dynamic embedding dimension fix
 # ==========================================================
 
 import streamlit as st
@@ -46,13 +44,32 @@ try:
 except Exception:
     OCR_AVAILABLE = False
 
-# ── PERF-3: FAISS vector memory ───────────────────────────
+# ── PERF-3 / UP-CHROMA: Vector memory (ChromaDB persistent, FAISS fallback) ──
+VECTOR_MEMORY_AVAILABLE = False
+CHROMA_AVAILABLE        = False
+FAISS_AVAILABLE         = False
+
 try:
     from sentence_transformers import SentenceTransformer
-    import faiss
-    VECTOR_MEMORY_AVAILABLE = True
+    _ST_AVAILABLE = True
 except ImportError:
-    VECTOR_MEMORY_AVAILABLE = False
+    _ST_AVAILABLE = False
+
+if _ST_AVAILABLE:
+    try:
+        import chromadb
+        CHROMA_AVAILABLE        = True
+        VECTOR_MEMORY_AVAILABLE = True
+    except ImportError:
+        pass
+
+    if not CHROMA_AVAILABLE:
+        try:
+            import faiss
+            FAISS_AVAILABLE         = True
+            VECTOR_MEMORY_AVAILABLE = True
+        except ImportError:
+            pass
 
 warnings.filterwarnings("ignore")
 
@@ -141,6 +158,7 @@ page = st.sidebar.radio("", [
     "🔎 Skill Intelligence",
     "🎓 Mock Assessment",
     "📚 Guided Study Chat",
+    "🎤 AI Interview Simulator",
     "💼 AI Job Finder (Premium)",
     "🔐 Admin Portal",
 ])
@@ -159,6 +177,11 @@ if page != "📚 Guided Study Chat":
 
 if page != "💼 AI Job Finder (Premium)":
     st.session_state.pop("job_analysis_result", None)
+
+if page != "🎤 AI Interview Simulator":
+    for k in ["interview_started", "interview_messages", "interview_context",
+              "interview_round", "interview_score_log", "interview_complete"]:
+        st.session_state.pop(k, None)
 
 # ================= SESSION TRACKING =================
 if "current_user"   not in st.session_state: st.session_state.current_user   = "System"
@@ -185,6 +208,11 @@ def _load_request_log() -> dict:
 
 def _save_request_log(log: dict):
     try:
+        # FIX-3: Prune stale sessions to cap file size
+        if len(log) > 500:
+            cutoff = time.time() - 3600
+            log    = {sid: ts for sid, ts in log.items()
+                      if any(t > cutoff for t in ts)}
         with open(REQUEST_LOG_FILE, "w") as f:
             json.dump(log, f)
     except Exception:
@@ -295,7 +323,8 @@ def safe_json_load(text):
         if s != -1 and e > s:
             data = json.loads(cleaned[s:e])
             if isinstance(data, dict):
-                for key in ("questions", "mcqs", "items", "data", "results"):
+                for key in ("questions", "mcqs", "items", "data", "results",
+                            "roadmap", "weeks", "interview", "rounds"):
                     if key in data and isinstance(data[key], list):
                         return data[key]
             return data
@@ -326,8 +355,10 @@ def normalize_skills(skills_input: str) -> list:
 
 
 # ═══════════════════════════════════════════════════════════
-# PERF-3: FAISS VECTOR MEMORY HELPERS
+# VECTOR MEMORY — ChromaDB (persistent) with FAISS fallback
 # ═══════════════════════════════════════════════════════════
+
+CHROMA_DIR = "chroma_study_db"
 
 def _get_embedder():
     if "study_embedder" not in st.session_state:
@@ -335,15 +366,57 @@ def _get_embedder():
     return st.session_state.study_embedder
 
 
+# ── ChromaDB helpers ──────────────────────────────────────
+
+def _get_chroma_collection(user: str, topic: str):
+    """Returns (or creates) a persistent ChromaDB collection scoped to user+topic."""
+    safe_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", f"{user}_{topic}")[:60]
+    client_c  = chromadb.PersistentClient(path=CHROMA_DIR)
+    return client_c.get_or_create_collection(
+        name=safe_name,
+        metadata={"hnsw:space": "cosine"},
+    )
+
+
+def _chroma_add(user: str, topic: str, question: str, answer: str):
+    try:
+        col       = _get_chroma_collection(user, topic)
+        embedder  = _get_embedder()
+        text      = f"Q: {question}\nA: {answer}"
+        embedding = embedder.encode([text], normalize_embeddings=True).tolist()[0]
+        doc_id    = str(uuid.uuid4())
+        col.add(documents=[text], embeddings=[embedding], ids=[doc_id])
+    except Exception as e:
+        print("ChromaDB add error:", e)
+
+
+def _chroma_query(user: str, topic: str, query: str, top_k: int = 3) -> str:
+    try:
+        col       = _get_chroma_collection(user, topic)
+        if col.count() == 0:
+            return ""
+        embedder  = _get_embedder()
+        q_emb     = embedder.encode([query], normalize_embeddings=True).tolist()[0]
+        results   = col.query(query_embeddings=[q_emb], n_results=min(top_k, col.count()))
+        docs      = results.get("documents", [[]])[0]
+        return "\n\n".join(docs)
+    except Exception as e:
+        print("ChromaDB query error:", e)
+        return ""
+
+
+# ── FAISS fallback helpers (session-only) ─────────────────
+
 def _init_faiss():
     if "study_faiss_index" not in st.session_state:
-        st.session_state.study_faiss_index  = faiss.IndexFlatL2(384)
+        embedder = _get_embedder()
+        # FIX-1: dynamic dimension — works with any sentence-transformer model
+        dim = embedder.get_sentence_embedding_dimension()
+        st.session_state.study_faiss_index  = faiss.IndexFlatL2(dim)
         st.session_state.study_memory_texts = []
 
 
-def add_to_memory(question: str, answer: str):
-    if not VECTOR_MEMORY_AVAILABLE:
-        return
+def _faiss_add(question: str, answer: str):
     _init_faiss()
     embedder  = _get_embedder()
     text      = f"Q: {question}\nA: {answer}"
@@ -352,23 +425,45 @@ def add_to_memory(question: str, answer: str):
     st.session_state.study_memory_texts.append(text)
 
 
-def retrieve_memory(query: str, top_k: int = 3) -> str:
-    if not VECTOR_MEMORY_AVAILABLE:
-        return ""
+def _faiss_query(query: str, top_k: int = 3) -> str:
     if "study_faiss_index" not in st.session_state:
         return ""
     index = st.session_state.study_faiss_index
     if index.ntotal == 0:
         return ""
-    embedder  = _get_embedder()
-    q_emb     = embedder.encode([query], normalize_embeddings=True).astype("float32")
-    k         = min(top_k, index.ntotal)
-    _, idxs   = index.search(q_emb, k)
-    texts     = st.session_state.study_memory_texts
+    embedder = _get_embedder()
+    q_emb    = embedder.encode([query], normalize_embeddings=True).astype("float32")
+    k        = min(top_k, index.ntotal)
+    _, idxs  = index.search(q_emb, k)
+    texts    = st.session_state.study_memory_texts
     return "\n\n".join(texts[i] for i in idxs[0] if 0 <= i < len(texts))
 
 
+# ── Public API — routes to ChromaDB or FAISS ─────────────
+
+def add_to_memory(question: str, answer: str):
+    if not VECTOR_MEMORY_AVAILABLE:
+        return
+    user  = st.session_state.get("current_user", "guest")
+    topic = st.session_state.get("study_topic",  "general")
+    if CHROMA_AVAILABLE:
+        _chroma_add(user, topic, question, answer)
+    else:
+        _faiss_add(question, answer)
+
+
+def retrieve_memory(query: str, top_k: int = 3) -> str:
+    if not VECTOR_MEMORY_AVAILABLE:
+        return ""
+    user  = st.session_state.get("current_user", "guest")
+    topic = st.session_state.get("study_topic",  "general")
+    if CHROMA_AVAILABLE:
+        return _chroma_query(user, topic, query, top_k)
+    return _faiss_query(query, top_k)
+
+
 def reset_study_memory():
+    """Session reset — clears FAISS index (ChromaDB persists by design)."""
     for k in ("study_faiss_index", "study_memory_texts", "study_embedder"):
         st.session_state.pop(k, None)
 
@@ -623,8 +718,8 @@ def extract_skills_from_resume(resume_text: str) -> list:
     prompt = f"""
 Extract all technical and professional skills from this resume text.
 
-Resume (first 3000 chars):
-{resume_text[:3000]}
+Resume (first 2000 + last 1000 chars for full coverage):
+{resume_text[:2000] + ("…" if len(resume_text) > 3000 else "") + resume_text[-1000:] if len(resume_text) > 2000 else resume_text}
 
 Return ONLY a JSON array of skill name strings:
 ["skill1","skill2","skill3"]
@@ -640,9 +735,180 @@ No explanations. No markdown.
     return []
 
 
+
 # ═══════════════════════════════════════════════════════════
-# MCQ FUNCTIONS
+# UP-4: AI INTERVIEW SIMULATOR
 # ═══════════════════════════════════════════════════════════
+
+INTERVIEW_ROUNDS = [
+    {"id": "intro",    "label": "🧊 Round 1 — Ice Breaker",       "focus": "background, motivation, career goals"},
+    {"id": "technical","label": "💻 Round 2 — Technical Deep Dive","focus": "technical skills, problem-solving, code logic"},
+    {"id": "behavioral","label":"🤝 Round 3 — Behavioural",        "focus": "teamwork, conflict, STAR-format stories"},
+    {"id": "system",   "label": "🏗️ Round 4 — System Design",     "focus": "architecture, scalability, trade-offs"},
+    {"id": "closing",  "label": "🎯 Round 5 — Closing & Feedback", "focus": "candidate questions, overall impression"},
+]
+
+
+def build_interviewer_system(role: str, domain: str, difficulty: str,
+                             round_focus: str, conversation_so_far: str) -> str:
+    return (
+        f"You are a senior {role} interviewer at a top tech company. "
+        f"Domain: {domain}. Interview difficulty: {difficulty}.\n"
+        f"Current round focus: {round_focus}.\n"
+        f"Rules:\n"
+        f"- Ask ONE question at a time — never multiple questions in one turn.\n"
+        f"- After the candidate answers, critique briefly (2-3 lines: what was good, what was missing).\n"
+        f"- Give a score for that answer: X/10.\n"
+        f"- Then ask the NEXT follow-up or move to the next topic.\n"
+        f"- Be professional but challenging. Push back on vague answers.\n"
+        f"- Do NOT reveal answers yourself — guide with follow-up probes.\n"
+        f"- Keep each response under 150 words.\n"
+        f"Conversation so far: {conversation_so_far[-2000:] if conversation_so_far else 'None'}"
+    )
+
+
+def generate_interview_opening(role: str, domain: str, difficulty: str,
+                                round_info: dict, skills: list) -> str:
+    prompt = (
+        f"You are a senior {role} interviewer. "
+        f"Open {round_info['label']} interview. "
+        f"Focus: {round_info['focus']}. "
+        f"Candidate skills: {', '.join(skills[:8])}. "
+        f"Difficulty: {difficulty}. "
+        f"Give a brief welcome (1 line) then ask your FIRST question for this round. "
+        f"Keep total response under 80 words."
+    )
+    return safe_llm_call(MCQ_MODEL, [{"role": "user", "content": prompt}], temperature=0.5) or \
+           f"Welcome to {round_info['label']}. Let's begin. {round_info['focus'].capitalize()} — tell me about yourself."
+
+
+def evaluate_interview_answer(question: str, answer: str, role: str, difficulty: str) -> dict:
+    """Score a single interview answer. Returns score + feedback."""
+    if not answer or not answer.strip():
+        return {"score": 0, "feedback": "No answer provided.", "follow_up": "Could you please attempt an answer?"}
+    prompt = f"""
+Senior {role} interviewer. Difficulty: {difficulty}.
+Question asked: {question}
+Candidate answered: {answer}
+
+Evaluate strictly. Return ONLY JSON (no markdown):
+{{"score":<0-10>,"feedback":"2-3 lines: strengths + what was missing or could be improved","follow_up":"one sharp follow-up question or probe"}}
+Score guide: 9-10 excellent | 7-8 good minor gaps | 5-6 adequate | 3-4 weak | 0-2 off-track/blank
+"""
+    r = safe_llm_call(MCQ_MODEL, [
+        {"role": "system", "content": "Return ONLY valid JSON."},
+        {"role": "user",   "content": prompt},
+    ], temperature=0.3)
+    if not r:
+        return {"score": 0, "feedback": "Evaluation failed.", "follow_up": "Let's continue."}
+    try:
+        cleaned = r.strip().replace("```json","").replace("```","").strip()
+        s = cleaned.find("{"); e = cleaned.rfind("}") + 1
+        return json.loads(cleaned[s:e]) if s != -1 and e > s else \
+               {"score": 0, "feedback": "Parse error.", "follow_up": "Let's continue."}
+    except Exception:
+        return {"score": 0, "feedback": "Could not parse evaluation.", "follow_up": "Let's continue."}
+
+
+def generate_interview_report(role: str, score_log: list) -> str:
+    """Generate final interview debrief after all rounds."""
+    avg = round(sum(s["score"] for s in score_log) / len(score_log), 1) if score_log else 0
+    summary = "\n".join(
+        f"Round {s['round']}: {s['question'][:80]}… → {s['score']}/10" for s in score_log
+    )
+    prompt = f"""
+You are a senior {role} interviewer. The candidate has completed a full mock interview.
+
+Score log:
+{summary}
+
+Average score: {avg}/10
+
+Write a professional debrief (8-12 lines) covering:
+1. Overall performance impression
+2. Top 2 strengths demonstrated
+3. Top 2 areas needing improvement
+4. Hiring recommendation: Strong Yes / Yes / Maybe / No
+5. One specific tip to prepare better
+
+Be honest, direct, and constructive.
+"""
+    return safe_llm_call(MCQ_MODEL, [{"role": "user", "content": prompt}], temperature=0.4) or \
+           f"Interview complete. Average score: {avg}/10."
+
+
+def save_interview_result(data_row: list):
+    try:
+        gc = _gs_client()
+        try:    sheet = gc.open("FutureProof_Interview_Results").sheet1
+        except: sheet = gc.create("FutureProof_Interview_Results").sheet1
+        sheet.append_row(data_row)
+    except Exception as e:
+        print("Interview Sheet Error:", e)
+
+
+# ═══════════════════════════════════════════════════════════
+# UP-5: REAL JOB AGGREGATION (SerpAPI / fallback links)
+# ═══════════════════════════════════════════════════════════
+
+SERPAPI_KEY = os.getenv("SERPAPI_KEY")   # optional — set in env for live results
+
+def fetch_real_jobs(role: str, location: str = "India", num: int = 6) -> list:
+    """
+    Fetches live job listings via SerpAPI Google Jobs.
+    Returns list of dicts: {title, company, location, snippet, apply_link}
+    Falls back to empty list if API key not set or call fails.
+    """
+    if not SERPAPI_KEY:
+        return []
+    try:
+        import urllib.request, urllib.parse
+        params = urllib.parse.urlencode({
+            "engine":   "google_jobs",
+            "q":        role,
+            "location": location,
+            "hl":       "en",
+            "api_key":  SERPAPI_KEY,
+        })
+        url = f"https://serpapi.com/search.json?{params}"
+        with urllib.request.urlopen(url, timeout=8) as resp:
+            data = json.loads(resp.read().decode())
+        jobs = []
+        for j in data.get("jobs_results", [])[:num]:
+            jobs.append({
+                "title":      j.get("title", ""),
+                "company":    j.get("company_name", ""),
+                "location":   j.get("location", ""),
+                "snippet":    j.get("description", "")[:200],
+                "apply_link": (j.get("related_links") or [{}])[0].get("link", ""),
+                "posted":     (j.get("detected_extensions") or {}).get("posted_at", ""),
+                "salary":     (j.get("detected_extensions") or {}).get("salary", "Not listed"),
+            })
+        return jobs
+    except Exception as e:
+        print("SerpAPI error:", e)
+        return []
+
+
+def render_job_cards(jobs: list):
+    """Renders fetched jobs as styled cards in Streamlit."""
+    if not jobs:
+        return
+    st.markdown("### 💼 Live Job Listings")
+    for j in jobs:
+        with st.container():
+            st.markdown(f"""
+<div style="background:rgba(255,255,255,0.06);border-radius:12px;padding:16px 20px;
+margin-bottom:12px;border:1px solid rgba(255,255,255,0.1);">
+  <h4 style="margin:0;color:#60a5fa;">{j['title']}</h4>
+  <p style="margin:4px 0;color:#94a3b8;">🏢 {j['company']} &nbsp;|&nbsp; 📍 {j['location']}
+  &nbsp;|&nbsp; 💰 {j['salary']} &nbsp;|&nbsp; 🕐 {j['posted']}</p>
+  <p style="color:#cbd5e1;font-size:0.9em;">{j['snippet']}…</p>
+  {"<a href='" + j['apply_link'] + "' target='_blank' style='color:#3b82f6;'>🔗 Apply Now</a>" if j['apply_link'] else ""}
+</div>""", unsafe_allow_html=True)
+
+
+
 
 def generate_mcqs(skills, difficulty, test_mode, mcq_count=10):
     if test_mode == "Theoretical Knowledge":
@@ -1505,7 +1771,8 @@ elif page == "📚 Guided Study Chat":
             )
 
             st.session_state.study_messages = []
-            reset_study_memory()           # PERF-3: fresh FAISS index per session
+            st.session_state.study_topic    = topic   # ChromaDB collection key
+            reset_study_memory()           # clear FAISS session index (ChromaDB persists)
 
         else:
             if not candidate_name: st.warning("⚠️ Please enter your name.")
@@ -1517,7 +1784,8 @@ elif page == "📚 Guided Study Chat":
         st.subheader(f"📘 {topic}" + (f"  |  📖 {book_source}" if book_source else ""))
 
         if VECTOR_MEMORY_AVAILABLE:
-            st.caption("🧠 Vector memory active — context from earlier in this session will be referenced automatically.")
+            backend = "ChromaDB (persistent across sessions)" if CHROMA_AVAILABLE else "FAISS (session only)"
+            st.caption(f"🧠 Vector memory active ({backend}) — past context is referenced automatically.")
 
         user_input = st.chat_input("Ask your question about this topic…")
 
@@ -1677,19 +1945,324 @@ Provide:
             st.markdown("## 🎯 AI Career Recommendations")
             st.markdown(response)
 
-            enc = target_role.replace(" ","%20")
-            st.markdown("### 🔗 Direct Job Search Links")
-            st.markdown(f"🔹 [LinkedIn Jobs](https://www.linkedin.com/jobs/search/?keywords={enc})")
-            st.markdown(f"🔹 [Indeed Jobs](https://www.indeed.com/jobs?q={enc})")
-            st.markdown(f"🔹 [Naukri Jobs](https://www.naukri.com/{target_role.replace(' ','-')}-jobs)")
-            st.markdown(f"🔹 [Glassdoor Jobs](https://www.glassdoor.com/Job/jobs.htm?sc.keyword={enc})")
+            # UP-5: Live job cards via SerpAPI (if key set), else fallback links
+            st.divider()
+            with st.spinner("🔍 Fetching live job listings…"):
+                live_jobs = fetch_real_jobs(target_role, location="India", num=6)
+
+            if live_jobs:
+                render_job_cards(live_jobs)
+                st.caption("📡 Live results via SerpAPI Google Jobs")
+            else:
+                enc = target_role.replace(" ", "%20")
+                st.markdown("### 🔗 Search Jobs Directly")
+                if SERPAPI_KEY:
+                    st.warning("⚠️ Live job fetch failed — showing search links instead.")
+                else:
+                    st.info("💡 Set `SERPAPI_KEY` env variable for live job cards. Using search links for now.")
+                st.markdown(f"🔹 [LinkedIn Jobs](https://www.linkedin.com/jobs/search/?keywords={enc})")
+                st.markdown(f"🔹 [Indeed Jobs](https://www.indeed.com/jobs?q={enc})")
+                st.markdown(f"🔹 [Naukri Jobs](https://www.naukri.com/{target_role.replace(' ', '-')}-jobs)")
+                st.markdown(f"🔹 [Glassdoor Jobs](https://www.glassdoor.com/Job/jobs.htm?sc.keyword={enc})")
         else:
             st.warning("Please fill required fields (Name, Skills, Target Role).")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ██████████████████████  ADMIN PORTAL  ████████████████████████████████████
+# ██████████████████  AI INTERVIEW SIMULATOR  ████████████████████████████████
 # ══════════════════════════════════════════════════════════════════════════════
+
+elif page == "🎤 AI Interview Simulator":
+
+    st.header("🎤 AI Interview Simulator")
+    st.caption("Full mock interview — 5 rounds, real-time AI feedback, scored debrief.")
+    st.session_state.current_feature = "Interview_Simulator"
+
+    # ── Setup form ───────────────────────────────────────────
+    if not st.session_state.get("interview_started"):
+
+        col1, col2 = st.columns(2)
+        with col1:
+            iv_name  = st.text_input("Your Full Name", key="iv_name_input")
+            iv_role  = st.text_input("Target Role",
+                placeholder="e.g. Data Scientist, Backend Engineer, Product Manager")
+        with col2:
+            iv_edu   = st.text_input("Education Level",
+                placeholder="e.g. B.Tech, MBA, Self-taught")
+            iv_exp   = st.selectbox("Experience Level",
+                ["Fresher", "1-2 Years", "3-5 Years", "5+ Years"])
+
+        iv_skills  = st.text_input("Your Skills (comma-separated)")
+        iv_diff    = st.selectbox("Interview Difficulty",
+            ["Beginner", "Intermediate", "Expert"])
+
+        rounds_available = [r["label"] for r in INTERVIEW_ROUNDS]
+        iv_rounds  = st.multiselect(
+            "Select Interview Rounds",
+            rounds_available,
+            default=rounds_available[:3],
+            help="Pick 1-5 rounds. They run in sequence.",
+        )
+
+        if st.button("🎤 Start Interview", use_container_width=True):
+            if not iv_name or not iv_role or not iv_skills:
+                st.warning("⚠️ Please fill in Name, Target Role, and Skills.")
+            elif not iv_rounds:
+                st.warning("⚠️ Please select at least one interview round.")
+            else:
+                if not check_request_limit(): st.stop()
+
+                skills_clean = normalize_skills(iv_skills)
+                domain_iv    = detect_domain_cached(tuple(skills_clean)) or "Technology"
+
+                # Filter to selected rounds in order
+                selected_rounds = [r for r in INTERVIEW_ROUNDS if r["label"] in iv_rounds]
+
+                st.session_state.interview_started    = True
+                st.session_state.iv_name              = iv_name
+                st.session_state.iv_role              = iv_role
+                st.session_state.iv_domain            = domain_iv
+                st.session_state.iv_difficulty        = iv_diff
+                st.session_state.iv_skills            = skills_clean
+                st.session_state.iv_rounds            = selected_rounds
+                st.session_state.interview_round      = 0
+                st.session_state.interview_messages   = []   # flat chat history
+                st.session_state.interview_score_log  = []   # per-answer scores
+                st.session_state.interview_complete   = False
+                st.session_state.interview_q_count    = 0    # questions asked this round
+                st.session_state.current_user         = iv_name
+                st.rerun()
+
+    # ── Active Interview ──────────────────────────────────────
+    else:
+        iv_name    = st.session_state.iv_name
+        iv_role    = st.session_state.iv_role
+        iv_domain  = st.session_state.iv_domain
+        iv_diff    = st.session_state.iv_difficulty
+        iv_skills  = st.session_state.iv_skills
+        rounds     = st.session_state.iv_rounds
+        round_idx  = st.session_state.interview_round
+        messages   = st.session_state.interview_messages
+        score_log  = st.session_state.interview_score_log
+        complete   = st.session_state.interview_complete
+
+        # ── Round progress bar ───────────────────────────────
+        total_rounds = len(rounds)
+        if not complete:
+            prog = round_idx / total_rounds
+            st.markdown(f"**Round {round_idx + 1} of {total_rounds} — {rounds[round_idx]['label']}**")
+            st.progress(prog)
+        else:
+            st.progress(1.0)
+
+        # ── Sidebar live score ───────────────────────────────
+        if score_log:
+            avg_live = round(sum(s["score"] for s in score_log) / len(score_log), 1)
+            st.sidebar.markdown("---")
+            st.sidebar.markdown("### 📊 Live Score")
+            st.sidebar.metric("Current Avg", f"{avg_live}/10")
+            st.sidebar.caption(f"Based on {len(score_log)} answer(s) scored")
+
+        # ── Generate opening question if round just started ──
+        if (not complete
+                and not messages
+                or (messages and messages[-1]["role"] == "user"
+                    and st.session_state.get("interview_q_count", 0) == 0)):
+
+            if not messages or messages[-1]["role"] == "user":
+                # Only auto-open if no messages yet OR we need the first Q of a new round
+                if not messages:
+                    with st.spinner(f"🎤 Preparing {rounds[round_idx]['label']}…"):
+                        opening = generate_interview_opening(
+                            iv_role, iv_domain, iv_diff,
+                            rounds[round_idx], iv_skills,
+                        )
+                    messages.append({"role": "assistant", "content": opening,
+                                     "round": round_idx})
+                    st.session_state.interview_messages  = messages
+                    st.session_state.interview_q_count   = 1
+
+        # ── Render chat history ──────────────────────────────
+        for msg in messages:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+                if msg["role"] == "assistant" and msg.get("score") is not None:
+                    sc = msg["score"]
+                    color = "#22c55e" if sc >= 7 else "#f59e0b" if sc >= 5 else "#ef4444"
+                    st.markdown(
+                        f'<span style="color:{color};font-weight:700;">Score: {sc}/10</span>',
+                        unsafe_allow_html=True,
+                    )
+
+        # ── Input / controls ─────────────────────────────────
+        if not complete:
+
+            col_input, col_next = st.columns([5, 1])
+
+            with col_input:
+                user_answer = st.chat_input(
+                    "Type your answer here… (or type 'skip' to move on)"
+                )
+
+            with col_next:
+                next_round_btn = st.button(
+                    "Next Round ➡️",
+                    disabled=(round_idx >= total_rounds - 1),
+                    help="Move to the next interview round",
+                )
+
+            # Process submitted answer
+            if user_answer:
+                if not check_request_limit(): st.stop()
+
+                messages.append({"role": "user", "content": user_answer, "round": round_idx})
+
+                # Don't score 'skip'
+                skip = user_answer.strip().lower() == "skip"
+
+                if not skip and messages:
+                    # Find the last interviewer question
+                    last_q = next(
+                        (m["content"] for m in reversed(messages[:-1])
+                         if m["role"] == "assistant"),
+                        "General question"
+                    )
+
+                    with st.spinner("🤖 Evaluating your answer…"):
+                        ev = evaluate_interview_answer(
+                            last_q, user_answer, iv_role, iv_diff
+                        )
+
+                    score = ev.get("score", 0)
+                    feedback  = ev.get("feedback", "")
+                    follow_up = ev.get("follow_up", "Let's continue.")
+
+                    # Log the score
+                    score_log.append({
+                        "round":    rounds[round_idx]["label"],
+                        "question": last_q[:120],
+                        "answer":   user_answer[:120],
+                        "score":    score,
+                    })
+                    st.session_state.interview_score_log = score_log
+
+                    # Build response: feedback + follow-up
+                    q_count = st.session_state.get("interview_q_count", 1)
+                    MAX_Q_PER_ROUND = 3
+
+                    if q_count >= MAX_Q_PER_ROUND:
+                        # Auto-advance hint
+                        reply = (
+                            f"**Feedback:** {feedback}\n\n"
+                            f"**Score: {score}/10**\n\n"
+                            f"✅ Good work on this round! Click **Next Round** to continue."
+                        )
+                    else:
+                        reply = (
+                            f"**Feedback:** {feedback}\n\n"
+                            f"**Score: {score}/10**\n\n"
+                            f"**Follow-up:** {follow_up}"
+                        )
+                        st.session_state.interview_q_count = q_count + 1
+
+                    messages.append({
+                        "role":    "assistant",
+                        "content": reply,
+                        "round":   round_idx,
+                        "score":   score,
+                    })
+
+                elif skip:
+                    messages.append({
+                        "role":    "assistant",
+                        "content": "No problem — let's move on. " +
+                                   (rounds[round_idx]["focus"].capitalize() + " continues…"),
+                        "round":   round_idx,
+                    })
+
+                st.session_state.interview_messages = messages
+                st.rerun()
+
+            # Handle Next Round button
+            if next_round_btn:
+                next_idx = round_idx + 1
+                if next_idx >= total_rounds:
+                    st.session_state.interview_complete = True
+                else:
+                    st.session_state.interview_round   = next_idx
+                    st.session_state.interview_q_count = 0
+                    # Generate opening for new round
+                    with st.spinner(f"🎤 Starting {rounds[next_idx]['label']}…"):
+                        opening = generate_interview_opening(
+                            iv_role, iv_domain, iv_diff,
+                            rounds[next_idx], iv_skills,
+                        )
+                    messages.append({
+                        "role":    "assistant",
+                        "content": f"---\n### {rounds[next_idx]['label']}\n\n{opening}",
+                        "round":   next_idx,
+                    })
+                    st.session_state.interview_messages  = messages
+                    st.session_state.interview_q_count   = 1
+                st.rerun()
+
+        # ── Final debrief ─────────────────────────────────────
+        else:
+            st.divider()
+            st.markdown("## 🏁 Interview Complete — Final Debrief")
+
+            if score_log:
+                avg_final = round(sum(s["score"] for s in score_log) / len(score_log), 1)
+
+                c1, c2, c3 = st.columns(3)
+                with c1: st.metric("🏆 Final Score",    f"{avg_final}/10")
+                with c2: st.metric("✅ Questions Scored", len(score_log))
+                with c3: st.metric("🎯 Rounds Completed", len(rounds))
+
+                bar_col = "#22c55e" if avg_final >= 7 else "#f59e0b" if avg_final >= 5 else "#ef4444"
+                st.markdown(f"""
+<div style="background:rgba(255,255,255,0.08);border-radius:10px;padding:4px;margin:8px 0 16px 0;">
+  <div style="background:{bar_col};width:{int(avg_final*10)}%;height:12px;border-radius:8px;"></div>
+</div>""", unsafe_allow_html=True)
+
+                if   avg_final >= 8: st.success("✅ **Excellent performance** — Strong Hire recommendation.")
+                elif avg_final >= 6: st.warning("⚠️ **Good performance** — Hire with reservations.")
+                else:                st.error("❌ **Needs improvement** — More practice recommended.")
+
+                st.divider()
+                st.markdown("### 📋 Score Breakdown by Question")
+                for i, s in enumerate(score_log, 1):
+                    sc = s["score"]
+                    color = "🟢" if sc >= 7 else "🟡" if sc >= 5 else "🔴"
+                    st.markdown(f"{color} **Q{i} ({s['round']}):** {s['question'][:90]}… → **{sc}/10**")
+
+                st.divider()
+                st.markdown("### 🤖 AI Debrief")
+                with st.spinner("Generating your personalised debrief…"):
+                    debrief = generate_interview_report(iv_role, score_log)
+                st.info(debrief)
+
+                # Save to Google Sheets
+                save_interview_result([
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    iv_name, iv_role, iv_domain, iv_diff,
+                    ", ".join(iv_skills[:8]),
+                    avg_final, len(score_log), len(rounds),
+                ])
+
+            else:
+                st.info("No answers were scored. Run the interview and answer questions to get your report.")
+
+            if st.button("🔄 Start New Interview"):
+                for k in ["interview_started", "interview_messages", "interview_context",
+                          "interview_round", "interview_score_log", "interview_complete",
+                          "interview_q_count", "iv_name", "iv_role", "iv_domain",
+                          "iv_difficulty", "iv_skills", "iv_rounds"]:
+                    st.session_state.pop(k, None)
+                st.rerun()
+
+
+
 
 elif page == "🔐 Admin Portal":
 

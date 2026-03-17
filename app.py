@@ -1363,13 +1363,25 @@ def _load_copilot_profile_from_sheet(name: str):
 
 @st.cache_data(ttl=300)
 def load_mock_results():
-    try:
-        sheet = _gs_client().open("FutureProof_Mock_Results").sheet1
-        data  = sheet.get_all_records()
-        return pd.DataFrame(data) if data else pd.DataFrame()
-    except Exception as e:
-        st.error(f"Analytics Load Error: {e}")
-        return pd.DataFrame()
+    """
+    Returns (DataFrame, error_message_or_None).
+    Never calls st.error() — caller handles display.
+    Retries up to 3 times on 503 / transient Google API errors.
+    """
+    last_err = None
+    for attempt in range(3):
+        try:
+            sheet = _gs_client().open("FutureProof_Mock_Results").sheet1
+            data  = sheet.get_all_records()
+            return pd.DataFrame(data) if data else pd.DataFrame(), None
+        except Exception as e:
+            last_err = str(e)
+            # Only retry on transient 503 / server errors
+            if "503" in last_err or "unavailable" in last_err.lower() or "quota" in last_err.lower():
+                time.sleep(2 ** attempt)   # 1s, 2s, 4s
+                continue
+            break   # non-transient error — don't retry
+    return pd.DataFrame(), last_err
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1377,7 +1389,7 @@ def load_mock_results():
 # ═══════════════════════════════════════════════════════════
 
 def analyze_user_trend(name):
-    df = load_mock_results()
+    df, _ = load_mock_results()   # ignore error — caller handles gracefully
     if df.empty: return None
     df.columns = df.columns.str.strip().str.lower()
     if "candidate_name" not in df.columns or "percent" not in df.columns: return None
@@ -3395,55 +3407,79 @@ elif page == "🔐 Admin Portal":
         if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
             st.success("✅ Admin Logged In")
 
-            df = load_mock_results()
-            if df.empty:
-                st.warning("No mock test data available yet."); st.stop()
+            # ── Load mock results with graceful error handling ────────────────
+            df, load_err = load_mock_results()
 
-            df.columns = df.columns.str.strip().str.lower()
-            df = df.rename(columns={
-                "percentage":"percent","marks":"score",
-                "level of exam":"difficulty","education level":"education",
-                "name":"candidate_name","email":"candidate_email",
-            })
-            for col in ["percent","difficulty","score"]:
-                if col not in df.columns:
-                    st.error(f"Missing column: {col}"); st.write(df.columns.tolist()); st.stop()
+            if load_err:
+                st.error(f"⚠️ Analytics Load Error: {load_err}")
+                if "503" in load_err or "unavailable" in load_err.lower():
+                    st.info(
+                        "Google Sheets returned a temporary 503 error. "
+                        "This usually resolves in 30–60 seconds. "
+                        "Click **Retry** to try again."
+                    )
+                else:
+                    st.info("Check your Google Service Account credentials and sheet permissions.")
+                if st.button("🔄 Retry Loading Analytics"):
+                    st.cache_data.clear()
+                    st.rerun()
+                # Still show API usage section even if mock data failed
+                st.divider()
+                st.markdown("## 🧠 API Usage (loads independently)")
 
-            df["percent"] = pd.to_numeric(df["percent"], errors="coerce")
-            df["score"]   = pd.to_numeric(df["score"],   errors="coerce")
+            elif df.empty:
+                st.warning("📭 No mock test data available yet. Data will appear after the first test is submitted.")
+                st.divider()
+                st.markdown("## 🧠 API Usage (loads independently)")
 
-            st.markdown("## 📊 Platform Overview")
-            total_tests = len(df)
-            avg_score   = df["percent"].mean()
-            pass_rate   = (df["percent"] >= 80).mean() * 100
+            else:
+                df.columns = df.columns.str.strip().str.lower()
+                df = df.rename(columns={
+                    "percentage":"percent","marks":"score",
+                    "level of exam":"difficulty","education level":"education",
+                    "name":"candidate_name","email":"candidate_email",
+                })
+                missing_cols = [c for c in ["percent","difficulty","score"] if c not in df.columns]
+                if missing_cols:
+                    st.error(f"Unexpected sheet structure — missing columns: {missing_cols}")
+                    st.caption(f"Columns found: {df.columns.tolist()}")
+                else:
+                    df["percent"] = pd.to_numeric(df["percent"], errors="coerce")
+                    df["score"]   = pd.to_numeric(df["score"],   errors="coerce")
 
-            def metric_card(title, value):
-                st.markdown(f"""
-                    <div style="background:rgba(255,255,255,0.05);padding:20px;border-radius:12px;
-                    text-align:center;border:1px solid rgba(255,255,255,0.1);">
-                    <h4 style="color:#94a3b8;margin-bottom:10px;">{title}</h4>
-                    <h2 style="color:white;font-weight:700;">{value}</h2></div>""",
-                    unsafe_allow_html=True)
+                    st.markdown("## 📊 Platform Overview")
+                    total_tests = len(df)
+                    avg_score   = df["percent"].mean()
+                    pass_rate   = (df["percent"] >= 80).mean() * 100
 
-            c1,c2,c3 = st.columns(3)
-            with c1: metric_card("Total Tests",   total_tests)
-            with c2: metric_card("Average Score", f"{avg_score:.2f}%")
-            with c3: metric_card("Pass Rate",     f"{pass_rate:.2f}%")
+                    def metric_card(title, value):
+                        st.markdown(f"""
+                            <div style="background:rgba(255,255,255,0.05);padding:20px;border-radius:12px;
+                            text-align:center;border:1px solid rgba(255,255,255,0.1);">
+                            <h4 style="color:#94a3b8;margin-bottom:10px;">{title}</h4>
+                            <h2 style="color:white;font-weight:700;">{value}</h2></div>""",
+                            unsafe_allow_html=True)
 
-            st.divider()
-            st.markdown("## 📈 Difficulty Breakdown")
-            st.bar_chart(df["difficulty"].value_counts())
-            st.divider()
-            st.markdown("## 📊 Score Distribution")
-            st.bar_chart(df["percent"])
-            st.divider()
-            st.markdown("## 🏆 Top Performers")
-            st.dataframe(df.sort_values("percent",ascending=False).head(5)[
-                ["candidate_name","candidate_email","difficulty","percent"]])
-            st.divider()
-            st.markdown("## 📂 Full Dataset")
-            st.dataframe(df)
+                    c1,c2,c3 = st.columns(3)
+                    with c1: metric_card("Total Tests",   total_tests)
+                    with c2: metric_card("Average Score", f"{avg_score:.2f}%")
+                    with c3: metric_card("Pass Rate",     f"{pass_rate:.2f}%")
 
+                    st.divider()
+                    st.markdown("## 📈 Difficulty Breakdown")
+                    st.bar_chart(df["difficulty"].value_counts())
+                    st.divider()
+                    st.markdown("## 📊 Score Distribution")
+                    st.bar_chart(df["percent"])
+                    st.divider()
+                    st.markdown("## 🏆 Top Performers")
+                    st.dataframe(df.sort_values("percent",ascending=False).head(5)[
+                        ["candidate_name","candidate_email","difficulty","percent"]])
+                    st.divider()
+                    st.markdown("## 📂 Full Dataset")
+                    st.dataframe(df)
+
+            # ── API Usage — loads independently of mock data ──────────────────
             @st.cache_data(ttl=300)
             def load_api_usage():
                 try:

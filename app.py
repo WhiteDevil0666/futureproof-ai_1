@@ -3889,12 +3889,12 @@ elif page == "🔐 Admin Portal":
 
                     # Today's stats
                     if "timestamp" in df_api.columns:
-                        df_api["timestamp"] = pd.to_datetime(df_api["timestamp"], errors="coerce")
-                        today_start = pd.Timestamp.now().normalize()
+                        df_api["timestamp"] = pd.to_datetime(df_api["timestamp"], errors="coerce", utc=True)
+                        today_start = pd.Timestamp.now(tz="UTC").normalize()
                         today_df    = df_api[
                             (df_api["timestamp"] >= today_start) &
                             (df_api["timestamp"] <  today_start + pd.Timedelta(days=1))
-                        ]
+                        ]                        ]
                         st.markdown("### 📅 Today's Activity")
                         t1, t2, t3, t4 = st.columns(4)
                         with t1: st.metric("Requests Today",     len(today_df))

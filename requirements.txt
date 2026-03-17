@@ -12,3 +12,4 @@ PyPDF2
 Pillow
 chromadb
 faiss-cpu
+supabase

@@ -1,12 +1,13 @@
 # ==========================================================
-# FUTUREPROOF AI – v5.1 Production Build
+# FUTUREPROOF AI – v5.2 Production Build
 # ──────────────────────────────────────────────────────────
-# v5.1 PATCHES APPLIED:
+# v5.2 PATCHES APPLIED:
 #   P-1  Prompt injection hardening (interview + written + copilot chat)
 #   P-2  ChromaDB client caching (session-level, not per-call)
 #   P-3  Copilot plan anti-drift (skill-constraint injection)
-#   P-4  Copilot profile persistence (Google Sheets load/save)
+#   P-4  Copilot profile persistence (Supabase load/save)
 #   P-5  Job readiness gate (warn-not-block, three-tier UX)
+#   P-6  Google Sheets → Supabase migration
 # ==========================================================
 
 import streamlit as st
@@ -20,8 +21,7 @@ import uuid
 import warnings
 from datetime import datetime
 from groq import Groq
-import gspread
-from google.oauth2.service_account import Credentials
+from supabase import create_client, Client
 import PyPDF2
 from PIL import Image
 import io
@@ -184,6 +184,18 @@ MAX_REQUESTS_PER_SESSION = 60
 REQUEST_COOLDOWN         = 3
 REQUEST_LOG_FILE         = "request_log.json"
 
+
+# ═══════════════════════════════════════════════════════════
+# SUPABASE CLIENT
+# ═══════════════════════════════════════════════════════════
+
+@st.cache_resource
+def _get_supabase() -> Client:
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
+
+
 # ================= SIDEBAR =================
 st.sidebar.markdown("## 📌 Navigation")
 page = st.sidebar.radio("", [
@@ -316,14 +328,17 @@ def safe_llm_call(model, messages, temperature=0.3, retries=3):
             estimated_cost = (total_tokens / 1000) * price_per_1k
 
             try:
-                save_api_usage([
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    user, feature, model,
-                    prompt_tokens, completion_tokens, total_tokens,
-                    round(estimated_cost, 6),
-                ])
-            except Exception as sheet_err:
-                print("Sheet Logging Error:", sheet_err)
+                save_api_usage({
+                    "user_name":         user,
+                    "feature":           feature,
+                    "model":             model,
+                    "prompt_tokens":     prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens":      total_tokens,
+                    "estimated_cost":    round(estimated_cost, 6),
+                })
+            except Exception as sb_err:
+                print("Supabase API Usage Logging Error:", sb_err)
 
             log_api_usage(model, "SUCCESS")
             return content
@@ -403,9 +418,7 @@ def _get_embedder():
     return st.session_state.study_embedder
 
 
-# ── PATCH 2: cached ChromaDB client ───────────────────────────────────────────
 def _get_chroma_client():
-    """Return a cached ChromaDB persistent client — created once per session."""
     if "chroma_client" not in st.session_state:
         st.session_state.chroma_client = chromadb.PersistentClient(path=CHROMA_DIR)
     return st.session_state.chroma_client
@@ -413,7 +426,7 @@ def _get_chroma_client():
 
 def _get_chroma_collection(user: str, topic: str):
     safe_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", f"{user}_{topic}")[:60]
-    client_c  = _get_chroma_client()          # PATCH 2: use cached client
+    client_c  = _get_chroma_client()
     return client_c.get_or_create_collection(
         name=safe_name,
         metadata={"hnsw:space": "cosine"},
@@ -775,7 +788,6 @@ def generate_interview_opening(role, domain, difficulty, round_info, skills):
            f"Welcome to {round_info['label']}. Let's begin. Tell me about yourself."
 
 
-# ── PATCH 1a: evaluate_interview_answer — prompt injection hardened ──────────
 def evaluate_interview_answer(question, answer, role, difficulty):
     if not answer or not answer.strip():
         return {"score": 0, "feedback": "No answer provided.", "follow_up": "Could you please attempt an answer?"}
@@ -834,14 +846,11 @@ Write a professional debrief (8-12 lines) covering:
            f"Interview complete. Average score: {avg}/10."
 
 
-def save_interview_result(data_row):
+def save_interview_result(data: dict):
     try:
-        gc = _gs_client()
-        try:    sheet = gc.open("FutureProof_Interview_Results").sheet1
-        except: sheet = gc.create("FutureProof_Interview_Results").sheet1
-        sheet.append_row(data_row)
+        _get_supabase().table("interview_results").insert(data).execute()
     except Exception as e:
-        print("Interview Sheet Error:", e)
+        print("Interview Result Save Error:", e)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -950,14 +959,11 @@ def compute_job_match_score(user_skills, jd_text):
     }
 
 
-def save_job_match(data_row):
+def save_job_match(data: dict):
     try:
-        gc = _gs_client()
-        try:    sheet = gc.open("FutureProof_Job_Matches").sheet1
-        except: sheet = gc.create("FutureProof_Job_Matches").sheet1
-        sheet.append_row(data_row)
+        _get_supabase().table("job_matches").insert(data).execute()
     except Exception as e:
-        print("Job Match Sheet Error:", e)
+        print("Job Match Save Error:", e)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -965,11 +971,6 @@ def save_job_match(data_row):
 # ═══════════════════════════════════════════════════════════
 
 def render_readiness_gate(readiness: int, target_role: str) -> bool:
-    """
-    Three-tier UX gate before job listings.
-    Returns True  → proceed to show jobs.
-    Returns False → user chose not to override the low-readiness warning.
-    """
     if readiness >= 70:
         st.success(
             f"✅ **{readiness}% Career Readiness** — You're well-positioned for "
@@ -1109,14 +1110,11 @@ Write a concise mastery report (6-8 lines):
            f"Topic complete! Average score: {avg}%."
 
 
-def save_agent_progress(data_row):
+def save_agent_progress(data: dict):
     try:
-        gc = _gs_client()
-        try:    sheet = gc.open("FutureProof_Agent_Progress").sheet1
-        except: sheet = gc.create("FutureProof_Agent_Progress").sheet1
-        sheet.append_row(data_row)
+        _get_supabase().table("agent_progress").insert(data).execute()
     except Exception as e:
-        print("Agent Progress Sheet Error:", e)
+        print("Agent Progress Save Error:", e)
 
 
 def generate_mcqs(skills, difficulty, test_mode, mcq_count=10):
@@ -1188,7 +1186,6 @@ Explain briefly (2-4 lines) why this answer is correct. Educational and clear.
     return safe_llm_call(MAIN_MODEL, [{"role": "user", "content": prompt}], temperature=0.3) or "Explanation unavailable."
 
 
-# ── PATCH 1b: evaluate_written_answer — prompt injection hardened ────────────
 def evaluate_written_answer(question, user_answer, difficulty):
     if not user_answer or not user_answer.strip():
         return {"score": 0, "feedback": "No answer provided.", "model_answer": "N/A"}
@@ -1234,124 +1231,95 @@ def get_time_limit(difficulty, mcq_count=10, test_mode="Theoretical Knowledge"):
 
 
 # ═══════════════════════════════════════════════════════════
-# GOOGLE SHEETS
+# SUPABASE DATA FUNCTIONS
 # ═══════════════════════════════════════════════════════════
 
-def _gs_client():
-    scopes = ["https://www.googleapis.com/auth/spreadsheets",
-              "https://www.googleapis.com/auth/drive"]
-    creds  = Credentials.from_service_account_info(st.secrets["GOOGLE_SERVICE_ACCOUNT"], scopes=scopes)
-    return gspread.authorize(creds)
-
-
-def save_feedback(data_row):
+def save_feedback(data: dict):
     try:
-        _gs_client().open("FutureProof_Feedback").sheet1.append_row(data_row)
+        _get_supabase().table("feedback").insert(data).execute()
     except Exception as e:
-        st.error(f"Google Sheet Error: {e}")
+        st.error(f"Feedback Save Error: {e}")
 
 
-def save_mock_result(data_row):
+def save_mock_result(data: dict):
     try:
-        gc = _gs_client()
-        try:    sheet = gc.open("FutureProof_Mock_Results").sheet1
-        except: sheet = gc.create("FutureProof_Mock_Results").sheet1
-        sheet.append_row(data_row)
+        _get_supabase().table("mock_results").insert(data).execute()
     except Exception as e:
-        st.error(f"Mock Sheet Error: {e}")
+        st.error(f"Mock Result Save Error: {e}")
 
 
-def save_api_usage(data_row):
+def save_api_usage(data: dict):
     try:
-        gc = _gs_client()
-        try:    sheet = gc.open("FutureProof_API_Usage").sheet1
-        except: sheet = gc.create("FutureProof_API_Usage").sheet1
-        sheet.append_row(data_row)
+        _get_supabase().table("api_usage").insert(data).execute()
     except Exception as e:
         print("API Usage Logging Error:", e)
 
 
-def save_study_history(data_row):
+def save_study_history(data: dict):
     try:
-        gc = _gs_client()
-        try:    sheet = gc.open("FutureProof_Study_History").sheet1
-        except: sheet = gc.create("FutureProof_Study_History").sheet1
-        sheet.append_row(data_row)
+        _get_supabase().table("study_history").insert(data).execute()
     except Exception as e:
-        st.error(f"Study History Error: {e}")
+        st.error(f"Study History Save Error: {e}")
 
 
-def check_study_history(name, education, topic, level):
+def check_study_history(name, education, topic, level) -> bool:
     try:
-        sheet = _gs_client().open("FutureProof_Study_History").sheet1
-        data  = sheet.get_all_records()
-        if not data: return False
-        df = pd.DataFrame(data)
-        df.columns = df.columns.str.lower()
-        return not df[
-            (df["name"].str.lower()      == name.lower())     &
-            (df["education"].str.lower() == education.lower()) &
-            (df["topic"].str.lower()     == topic.lower())     &
-            (df["level"].str.lower()     == level.lower())
-        ].empty
+        res = (
+            _get_supabase()
+            .table("study_history")
+            .select("id")
+            .eq("name",      name)
+            .eq("education", education)
+            .eq("topic",     topic)
+            .eq("level",     level)
+            .limit(1)
+            .execute()
+        )
+        return len(res.data) > 0
     except Exception:
         return False
 
 
 # ═══════════════════════════════════════════════════════════
-# PATCH 4 — COPILOT PROFILE PERSISTENCE (Google Sheets)
+# COPILOT PROFILE PERSISTENCE (Supabase)
 # ═══════════════════════════════════════════════════════════
 
 def _save_full_copilot_profile(name: str, profile: dict, guidance: dict):
     """
-    Persist full Copilot profile + guidance JSON to Google Sheets.
-    Overwrites existing row for this user if one exists.
+    Upsert full Copilot profile + guidance to Supabase.
+    The copilot_full table has a UNIQUE constraint on name,
+    so this overwrites cleanly for returning users.
     """
     try:
-        gc = _gs_client()
-        try:
-            sheet = gc.open("FutureProof_Copilot_Full").sheet1
-        except Exception:
-            sheet = gc.create("FutureProof_Copilot_Full").sheet1
-            sheet.append_row(["name", "timestamp", "profile_json", "guidance_json"])
-
-        rows = sheet.get_all_records()
-        existing_row_index = None
-        for i, row in enumerate(rows, start=2):  # row 1 = header
-            if str(row.get("name", "")).lower() == name.lower():
-                existing_row_index = i
-                break
-
-        new_row = [
-            name,
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            json.dumps(profile),
-            json.dumps(guidance),
-        ]
-
-        if existing_row_index:
-            sheet.update(f"A{existing_row_index}:D{existing_row_index}", [new_row])
-        else:
-            sheet.append_row(new_row)
-
+        row = {
+            "name":          name,
+            "profile_json":  json.dumps(profile),
+            "guidance_json": json.dumps(guidance),
+        }
+        _get_supabase().table("copilot_full").upsert(row, on_conflict="name").execute()
     except Exception as e:
         print(f"Copilot full profile save error: {e}")
 
 
 def _load_copilot_profile_from_sheet(name: str):
     """
-    Load saved Copilot profile + guidance from Google Sheets by name.
+    Load saved Copilot profile + guidance from Supabase by name.
     Returns (profile_dict, guidance_dict) or (None, None) if not found.
     """
     try:
-        gc    = _gs_client()
-        sheet = gc.open("FutureProof_Copilot_Full").sheet1
-        rows  = sheet.get_all_records()
-        for row in reversed(rows):  # most recent first
-            if str(row.get("name", "")).lower() == name.lower():
-                profile  = json.loads(row["profile_json"])
-                guidance = json.loads(row["guidance_json"])
-                return profile, guidance
+        res = (
+            _get_supabase()
+            .table("copilot_full")
+            .select("profile_json, guidance_json")
+            .eq("name", name)
+            .limit(1)
+            .execute()
+        )
+        if res.data:
+            row      = res.data[0]
+            profile  = json.loads(row["profile_json"])
+            guidance = json.loads(row["guidance_json"])
+            return profile, guidance
     except Exception as e:
         print(f"Copilot profile load error: {e}")
     return None, None
@@ -1363,25 +1331,12 @@ def _load_copilot_profile_from_sheet(name: str):
 
 @st.cache_data(ttl=300)
 def load_mock_results():
-    """
-    Returns (DataFrame, error_message_or_None).
-    Never calls st.error() — caller handles display.
-    Retries up to 3 times on 503 / transient Google API errors.
-    """
-    last_err = None
-    for attempt in range(3):
-        try:
-            sheet = _gs_client().open("FutureProof_Mock_Results").sheet1
-            data  = sheet.get_all_records()
-            return pd.DataFrame(data) if data else pd.DataFrame(), None
-        except Exception as e:
-            last_err = str(e)
-            # Only retry on transient 503 / server errors
-            if "503" in last_err or "unavailable" in last_err.lower() or "quota" in last_err.lower():
-                time.sleep(2 ** attempt)   # 1s, 2s, 4s
-                continue
-            break   # non-transient error — don't retry
-    return pd.DataFrame(), last_err
+    try:
+        res = _get_supabase().table("mock_results").select("*").execute()
+        return pd.DataFrame(res.data) if res.data else pd.DataFrame()
+    except Exception as e:
+        st.error(f"Analytics Load Error: {e}")
+        return pd.DataFrame()
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1389,7 +1344,7 @@ def load_mock_results():
 # ═══════════════════════════════════════════════════════════
 
 def analyze_user_trend(name):
-    df, _ = load_mock_results()   # ignore error — caller handles gracefully
+    df = load_mock_results()
     if df.empty: return None
     df.columns = df.columns.str.strip().str.lower()
     if "candidate_name" not in df.columns or "percent" not in df.columns: return None
@@ -1423,35 +1378,31 @@ Greet personally, analyze trend, encourage, suggest next step. Professional + mo
 # AI CAREER COPILOT — HELPER FUNCTIONS
 # ═══════════════════════════════════════════════════════════
 
-def save_copilot_profile(data_row: list):
+def save_copilot_profile(data: dict):
     try:
-        gc = _gs_client()
-        try:    sheet = gc.open("FutureProof_Copilot_Profiles").sheet1
-        except: sheet = gc.create("FutureProof_Copilot_Profiles").sheet1
-        sheet.append_row(data_row)
+        _get_supabase().table("copilot_profiles").insert(data).execute()
     except Exception as e:
-        print("Copilot Profile Sheet Error:", e)
+        print("Copilot Profile Save Error:", e)
 
 
 def _load_interview_history(name: str) -> dict:
     try:
-        sheet = _gs_client().open("FutureProof_Interview_Results").sheet1
-        rows  = sheet.get_all_records()
-        if not rows: return {}
-        df = pd.DataFrame(rows)
-        df.columns = df.columns.str.lower().str.strip()
-        if "name" not in df.columns: return {}
-        user_df = df[df["name"].str.lower() == name.lower()]
-        if user_df.empty: return {}
-        scores = pd.to_numeric(
-            user_df["avg_score"] if "avg_score" in user_df.columns else pd.Series(),
-            errors="coerce"
-        ).dropna()
+        res = (
+            _get_supabase()
+            .table("interview_results")
+            .select("avg_score, rounds_completed")
+            .eq("name", name)
+            .execute()
+        )
+        if not res.data:
+            return {}
+        df = pd.DataFrame(res.data)
+        scores = pd.to_numeric(df["avg_score"], errors="coerce").dropna()
+        rounds = pd.to_numeric(df["rounds_completed"], errors="coerce").fillna(0)
         return {
             "avg_score":   float(scores.mean()) if len(scores) else 0.0,
-            "rounds_done": int(user_df["rounds_completed"].sum())
-                           if "rounds_completed" in user_df.columns else 0,
-            "sessions":    len(user_df),
+            "rounds_done": int(rounds.sum()),
+            "sessions":    len(df),
         }
     except Exception:
         return {}
@@ -1459,23 +1410,21 @@ def _load_interview_history(name: str) -> dict:
 
 def _load_agent_history(name: str) -> dict:
     try:
-        sheet = _gs_client().open("FutureProof_Agent_Progress").sheet1
-        rows  = sheet.get_all_records()
-        if not rows: return {}
-        df = pd.DataFrame(rows)
-        df.columns = df.columns.str.lower().str.strip()
-        if "name" not in df.columns: return {}
-        user_df = df[df["name"].str.lower() == name.lower()]
-        if user_df.empty: return {}
-        avgs   = pd.to_numeric(
-            user_df["avg_mastery"] if "avg_mastery" in user_df.columns else pd.Series(),
-            errors="coerce"
-        ).dropna()
-        topics = user_df["topic"].dropna().tolist() if "topic" in user_df.columns else []
+        res = (
+            _get_supabase()
+            .table("agent_progress")
+            .select("avg_mastery, modules_completed, topic")
+            .eq("name", name)
+            .execute()
+        )
+        if not res.data:
+            return {}
+        df = pd.DataFrame(res.data)
+        avgs   = pd.to_numeric(df["avg_mastery"], errors="coerce").dropna()
+        topics = df["topic"].dropna().tolist() if "topic" in df.columns else []
         return {
             "avg_score":    float(avgs.mean()) if len(avgs) else 0.0,
-            "modules_done": int(user_df["modules_completed"].sum())
-                            if "modules_completed" in user_df.columns else 0,
+            "modules_done": int(pd.to_numeric(df["modules_completed"], errors="coerce").fillna(0).sum()),
             "topics":       topics[-5:],
         }
     except Exception:
@@ -1520,13 +1469,11 @@ def build_career_profile(name, goal_role, domain, education, skills,
     }
 
 
-# ── PATCH 3: generate_copilot_guidance — anti-drift with skill constraints ───
 def generate_copilot_guidance(profile: dict) -> dict:
     profile_str = json.dumps(
         {k: v for k, v in profile.items() if k != "skills"}, indent=2
     )
 
-    # Build a data-driven constraint — handles both gap-heavy and strong profiles
     if profile["critical_gaps"]:
         skill_constraint = (
             f"MANDATORY: Every task in weekly_plan MUST reference at least one of these "
@@ -1602,7 +1549,6 @@ Rules:
     if isinstance(data, dict) and "weekly_plan" in data:
         return data
 
-    # Fallback — still references real profile data
     top_gap = profile["critical_gaps"][0] if profile["critical_gaps"] else "core skills"
     return {
         "weekly_plan": [
@@ -1621,7 +1567,6 @@ Rules:
     }
 
 
-# ── PATCH 1c: generate_copilot_chat_response — injection hardened ────────────
 def generate_copilot_chat_response(profile: dict, user_message: str, history: list) -> str:
     profile_summary = (
         f"Candidate: {profile['name']} | Goal: {profile['goal_role']} | "
@@ -1646,7 +1591,6 @@ def generate_copilot_chat_response(profile: dict, user_message: str, history: li
     )
     messages = [{"role": "system", "content": system}]
     messages += history[-10:]
-    # Wrap user message to prevent injection
     safe_message = f'[User question]\n"""\n{user_message}\n"""'
     messages.append({"role": "user", "content": safe_message})
     return safe_llm_call(MCQ_MODEL, messages, temperature=0.4) or \
@@ -1672,12 +1616,10 @@ if page == "🤖 AI Career Copilot":
     """, unsafe_allow_html=True)
     st.divider()
 
-    # ── PATCH 4: Setup form with returning-user profile loader ──────────────
     if not st.session_state.get("copilot_started"):
 
         st.markdown("### 👤 Set Up Your Career Copilot")
 
-        # ── Returning user: name lookup ─────────────────────────────────────
         st.markdown("#### 🔄 Returning User? Load Your Saved Profile")
         returning_name = st.text_input(
             "Enter your name to check for a saved profile",
@@ -1705,7 +1647,6 @@ if page == "🤖 AI Career Copilot":
 
         st.divider()
 
-        # ── New user: full setup form ────────────────────────────────────────
         st.markdown("#### 🆕 New User — Create Your Profile")
         st.caption(
             "Answer a few questions. The Copilot pulls your results from "
@@ -1775,24 +1716,24 @@ if page == "🤖 AI Career Copilot":
                 st.session_state.copilot_chat_msgs = []
                 st.session_state.current_user      = cp_name
 
-                # PATCH 4: persist full profile to Google Sheets
                 with st.spinner("💾 Saving your profile for future sessions…"):
                     _save_full_copilot_profile(cp_name, profile, guidance)
 
-                # Keep legacy analytics row as well
-                save_copilot_profile([
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    cp_name, cp_goal, domain, cp_edu, cp_exp,
-                    ", ".join(skills_clean),
-                    profile["readiness"],
-                    guidance.get("readiness_label", ""),
-                    guidance.get("next_milestone", ""),
-                    json.dumps(profile["critical_gaps"]),
-                    json.dumps(guidance.get("weekly_plan", [])),
-                ])
+                save_copilot_profile({
+                    "name":            cp_name,
+                    "goal_role":       cp_goal,
+                    "domain":          domain,
+                    "education":       cp_edu,
+                    "experience":      cp_exp,
+                    "skills":          ", ".join(skills_clean),
+                    "readiness":       profile["readiness"],
+                    "readiness_label": guidance.get("readiness_label", ""),
+                    "next_milestone":  guidance.get("next_milestone", ""),
+                    "critical_gaps":   json.dumps(profile["critical_gaps"]),
+                    "weekly_plan":     json.dumps(guidance.get("weekly_plan", [])),
+                })
                 st.rerun()
 
-    # ── ACTIVE DASHBOARD ────────────────────────────────────────────────────
     else:
         profile  = st.session_state.copilot_profile
         guidance = st.session_state.copilot_guidance
@@ -1806,7 +1747,6 @@ if page == "🤖 AI Career Copilot":
             "🏠 Dashboard", "📅 Weekly Plan", "🔍 Gap Analysis", "💬 Ask Copilot", "🔄 Reset",
         ])
 
-        # ═══════════════ DASHBOARD ══════════════════════════
         with tab_dash:
             hour     = datetime.now().hour
             greeting = "Good morning" if hour < 12 else "Good afternoon" if hour < 17 else "Good evening"
@@ -1894,7 +1834,6 @@ if page == "🤖 AI Career Copilot":
                 if st.button("💼 Find Jobs",           use_container_width=True):
                     st.info("👉 Navigate to **💼 AI Job Finder** in the sidebar.")
 
-        # ═══════════════ WEEKLY PLAN ════════════════════════
         with tab_plan:
             st.markdown("### 📅 Your AI-Generated Weekly Plan")
             st.caption(f"Personalised for **{name_cp}** targeting **{goal_cp}** at **{readiness}%** readiness.")
@@ -1927,12 +1866,10 @@ if page == "🤖 AI Career Copilot":
                 with st.spinner("🤖 Generating a fresh weekly plan…"):
                     new_guidance = generate_copilot_guidance(profile)
                 st.session_state.copilot_guidance = new_guidance
-                # PATCH 4: persist refreshed guidance
                 _save_full_copilot_profile(profile["name"], profile, new_guidance)
                 st.success("✅ Weekly plan refreshed!")
                 st.rerun()
 
-        # ═══════════════ GAP ANALYSIS ═══════════════════════
         with tab_gaps:
             st.markdown("### 🔍 Integrated Gap Analysis")
             st.caption(f"Skill gaps for **{goal_cp}** combined with your performance data.")
@@ -2006,7 +1943,6 @@ if page == "🤖 AI Career Copilot":
                 for t in topics_studied:
                     st.markdown(f"✅ {t}")
 
-        # ═══════════════ CHAT ════════════════════════════════
         with tab_chat:
             st.markdown("### 💬 Ask Your Career Copilot")
             st.caption(
@@ -2061,7 +1997,6 @@ if page == "🤖 AI Career Copilot":
                     st.session_state.copilot_chat_msgs = []
                     st.rerun()
 
-        # ═══════════════ RESET ══════════════════════════════
         with tab_reset:
             st.markdown("### 🔄 Refresh Your Copilot")
             st.info(
@@ -2107,7 +2042,6 @@ if page == "🤖 AI Career Copilot":
                         new_guidance = generate_copilot_guidance(new_profile)
                     st.session_state.copilot_profile  = new_profile
                     st.session_state.copilot_guidance = new_guidance
-                    # PATCH 4: persist refreshed profile
                     with st.spinner("💾 Saving updated profile…"):
                         _save_full_copilot_profile(new_profile["name"], new_profile, new_guidance)
                     st.success("✅ Copilot refreshed with latest data!")
@@ -2337,10 +2271,13 @@ elif page == "🔎 Skill Intelligence":
         rating        = st.slider("How useful was this analysis?", 1, 5, 4)
         feedback_text = st.text_area("What can we improve?")
         if st.button("Submit Feedback"):
-            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            with open("feedback_log.txt", "a") as f:
-                f.write(f"{ts} | {name} | {rating} | {education} | {skills_input} | {feedback_text}\n")
-            save_feedback([ts, name, rating, education, skills_input, feedback_text])
+            save_feedback({
+                "user_name":     name,
+                "rating":        rating,
+                "education":     education,
+                "skills":        skills_input,
+                "feedback_text": feedback_text,
+            })
             st.success("✅ Feedback saved. Thank you!")
 
 
@@ -2591,14 +2528,19 @@ elif page == "🎓 Mock Assessment":
             else:          st.error("❌ Not Qualified (<60%) — Review fundamentals.")
 
             if not st.session_state.get("result_saved"):
-                save_mock_result([
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    candidate_name, candidate_email, candidate_education,
-                    skills_input, difficulty, test_mode,
-                    st.session_state.get("final_score",0),
-                    round(st.session_state.get("final_percent",0),2),
-                    total_questions, mt, wt,
-                ])
+                save_mock_result({
+                    "candidate_name":      candidate_name,
+                    "candidate_email":     candidate_email,
+                    "candidate_education": candidate_education,
+                    "skills":              skills_input,
+                    "difficulty":          difficulty,
+                    "test_mode":           test_mode,
+                    "final_score":         st.session_state.get("final_score", 0),
+                    "percent":             round(st.session_state.get("final_percent", 0), 2),
+                    "total_questions":     total_questions,
+                    "mcq_total":           mt,
+                    "written_total":       wt,
+                })
                 st.session_state.result_saved = True
 
 
@@ -2653,11 +2595,13 @@ elif page == "📚 Guided Study Chat":
                     level = "Expert"
                     st.session_state.study_chat_started = True
             else:
-                save_study_history([
-                    candidate_name, education, topic, level,
-                    book_source or "General",
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                ])
+                save_study_history({
+                    "name":        candidate_name,
+                    "education":   education,
+                    "topic":       topic,
+                    "level":       level,
+                    "book_source": book_source or "General",
+                })
                 st.session_state.study_chat_started = True
 
             book_line = (
@@ -2878,14 +2822,16 @@ Analyze compatibility between the candidate and the target role. Provide:
                         if match["missing_keywords"]: st.error(", ".join(match["missing_keywords"][:15]))
                         else: st.caption("No major gaps detected.")
 
-                    save_job_match([
-                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        name, target_role, overall,
-                        match["semantic_score"], match["keyword_score"],
-                        len(match["matched_keywords"]), len(match["missing_keywords"]),
-                    ])
+                    save_job_match({
+                        "name":                   name,
+                        "target_role":            target_role,
+                        "overall_score":          overall,
+                        "semantic_score":         match["semantic_score"],
+                        "keyword_score":          match["keyword_score"],
+                        "matched_keyword_count":  len(match["matched_keywords"]),
+                        "missing_keyword_count":  len(match["missing_keywords"]),
+                    })
 
-            # PATCH 5: readiness gate before live job listings
             st.divider()
             job_readiness = st.session_state.get("copilot_profile", {}).get("readiness", 55)
             should_show_jobs = render_readiness_gate(job_readiness, target_role)
@@ -3104,11 +3050,16 @@ elif page == "🎤 AI Interview Simulator":
                     debrief = generate_interview_report(iv_role, score_log)
                 st.info(debrief)
 
-                save_interview_result([
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    iv_name, iv_role, iv_domain, iv_diff,
-                    ", ".join(iv_skills[:8]), avg_final, len(score_log), len(rounds),
-                ])
+                save_interview_result({
+                    "name":             iv_name,
+                    "role":             iv_role,
+                    "domain":           iv_domain,
+                    "difficulty":       iv_diff,
+                    "skills":           ", ".join(iv_skills[:8]),
+                    "avg_score":        avg_final,
+                    "rounds_completed": len(score_log),
+                    "total_rounds":     len(rounds),
+                })
             else:
                 st.info("No answers were scored. Run the interview and answer questions to get your report.")
 
@@ -3371,12 +3322,16 @@ elif page == "🤖 AI Learning Agent":
                     report = generate_mastery_report(name_ag, topic_ag, plan, final_scores)
                 st.info(report)
 
-                save_agent_progress([
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    name_ag, topic_ag, level_ag, edu_ag,
-                    total, len(final_scores), avg,
-                    json.dumps(final_scores),
-                ])
+                save_agent_progress({
+                    "name":              name_ag,
+                    "topic":             topic_ag,
+                    "level":             level_ag,
+                    "education":         edu_ag,
+                    "total_modules":     total,
+                    "modules_completed": len(final_scores),
+                    "avg_mastery":       avg,
+                    "score_breakdown":   json.dumps(final_scores),
+                })
             else:
                 st.info("No module scores recorded yet.")
 
@@ -3407,85 +3362,60 @@ elif page == "🔐 Admin Portal":
         if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
             st.success("✅ Admin Logged In")
 
-            # ── Load mock results with graceful error handling ────────────────
-            df, load_err = load_mock_results()
+            df = load_mock_results()
+            if df.empty:
+                st.warning("No mock test data available yet."); st.stop()
 
-            if load_err:
-                st.error(f"⚠️ Analytics Load Error: {load_err}")
-                if "503" in load_err or "unavailable" in load_err.lower():
-                    st.info(
-                        "Google Sheets returned a temporary 503 error. "
-                        "This usually resolves in 30–60 seconds. "
-                        "Click **Retry** to try again."
-                    )
-                else:
-                    st.info("Check your Google Service Account credentials and sheet permissions.")
-                if st.button("🔄 Retry Loading Analytics"):
-                    st.cache_data.clear()
-                    st.rerun()
-                # Still show API usage section even if mock data failed
-                st.divider()
-                st.markdown("## 🧠 API Usage (loads independently)")
+            df.columns = df.columns.str.strip().str.lower()
+            df = df.rename(columns={
+                "percentage":"percent","marks":"score",
+                "level of exam":"difficulty","education level":"education",
+                "name":"candidate_name","email":"candidate_email",
+            })
+            for col in ["percent","difficulty","score"]:
+                if col not in df.columns:
+                    st.error(f"Missing column: {col}"); st.write(df.columns.tolist()); st.stop()
 
-            elif df.empty:
-                st.warning("📭 No mock test data available yet. Data will appear after the first test is submitted.")
-                st.divider()
-                st.markdown("## 🧠 API Usage (loads independently)")
+            df["percent"] = pd.to_numeric(df["percent"], errors="coerce")
+            df["score"]   = pd.to_numeric(df["score"],   errors="coerce")
 
-            else:
-                df.columns = df.columns.str.strip().str.lower()
-                df = df.rename(columns={
-                    "percentage":"percent","marks":"score",
-                    "level of exam":"difficulty","education level":"education",
-                    "name":"candidate_name","email":"candidate_email",
-                })
-                missing_cols = [c for c in ["percent","difficulty","score"] if c not in df.columns]
-                if missing_cols:
-                    st.error(f"Unexpected sheet structure — missing columns: {missing_cols}")
-                    st.caption(f"Columns found: {df.columns.tolist()}")
-                else:
-                    df["percent"] = pd.to_numeric(df["percent"], errors="coerce")
-                    df["score"]   = pd.to_numeric(df["score"],   errors="coerce")
+            st.markdown("## 📊 Platform Overview")
+            total_tests = len(df)
+            avg_score   = df["percent"].mean()
+            pass_rate   = (df["percent"] >= 80).mean() * 100
 
-                    st.markdown("## 📊 Platform Overview")
-                    total_tests = len(df)
-                    avg_score   = df["percent"].mean()
-                    pass_rate   = (df["percent"] >= 80).mean() * 100
+            def metric_card(title, value):
+                st.markdown(f"""
+                    <div style="background:rgba(255,255,255,0.05);padding:20px;border-radius:12px;
+                    text-align:center;border:1px solid rgba(255,255,255,0.1);">
+                    <h4 style="color:#94a3b8;margin-bottom:10px;">{title}</h4>
+                    <h2 style="color:white;font-weight:700;">{value}</h2></div>""",
+                    unsafe_allow_html=True)
 
-                    def metric_card(title, value):
-                        st.markdown(f"""
-                            <div style="background:rgba(255,255,255,0.05);padding:20px;border-radius:12px;
-                            text-align:center;border:1px solid rgba(255,255,255,0.1);">
-                            <h4 style="color:#94a3b8;margin-bottom:10px;">{title}</h4>
-                            <h2 style="color:white;font-weight:700;">{value}</h2></div>""",
-                            unsafe_allow_html=True)
+            c1,c2,c3 = st.columns(3)
+            with c1: metric_card("Total Tests",   total_tests)
+            with c2: metric_card("Average Score", f"{avg_score:.2f}%")
+            with c3: metric_card("Pass Rate",     f"{pass_rate:.2f}%")
 
-                    c1,c2,c3 = st.columns(3)
-                    with c1: metric_card("Total Tests",   total_tests)
-                    with c2: metric_card("Average Score", f"{avg_score:.2f}%")
-                    with c3: metric_card("Pass Rate",     f"{pass_rate:.2f}%")
+            st.divider()
+            st.markdown("## 📈 Difficulty Breakdown")
+            st.bar_chart(df["difficulty"].value_counts())
+            st.divider()
+            st.markdown("## 📊 Score Distribution")
+            st.bar_chart(df["percent"])
+            st.divider()
+            st.markdown("## 🏆 Top Performers")
+            st.dataframe(df.sort_values("percent",ascending=False).head(5)[
+                ["candidate_name","candidate_email","difficulty","percent"]])
+            st.divider()
+            st.markdown("## 📂 Full Dataset")
+            st.dataframe(df)
 
-                    st.divider()
-                    st.markdown("## 📈 Difficulty Breakdown")
-                    st.bar_chart(df["difficulty"].value_counts())
-                    st.divider()
-                    st.markdown("## 📊 Score Distribution")
-                    st.bar_chart(df["percent"])
-                    st.divider()
-                    st.markdown("## 🏆 Top Performers")
-                    st.dataframe(df.sort_values("percent",ascending=False).head(5)[
-                        ["candidate_name","candidate_email","difficulty","percent"]])
-                    st.divider()
-                    st.markdown("## 📂 Full Dataset")
-                    st.dataframe(df)
-
-            # ── API Usage — loads independently of mock data ──────────────────
             @st.cache_data(ttl=300)
             def load_api_usage():
                 try:
-                    sheet = _gs_client().open("FutureProof_API_Usage").sheet1
-                    data  = sheet.get_all_records()
-                    return pd.DataFrame(data) if data else pd.DataFrame()
+                    res = _get_supabase().table("api_usage").select("*").execute()
+                    return pd.DataFrame(res.data) if res.data else pd.DataFrame()
                 except Exception:
                     return pd.DataFrame()
 
@@ -3508,18 +3438,18 @@ elif page == "🔐 Admin Portal":
                     with c1: st.metric("📊 Requests Today",     len(today_df))
                     with c2: st.metric("⚡ Avg Tokens/Request", int(today_df["total_tokens"].mean()) if "total_tokens" in today_df and len(today_df) else 0)
                     with c3: st.metric("💰 Today's AI Cost",    f"${today_df['estimated_cost'].sum():.4f}" if "estimated_cost" in today_df else "$0")
-                    with c4: st.metric("👥 Active Users Today", today_df["user"].nunique() if "user" in today_df.columns else 0)
+                    with c4: st.metric("👥 Active Users Today", today_df["user_name"].nunique() if "user_name" in today_df.columns else 0)
                     st.divider()
 
                 st.markdown("## 💰 API Cost Analytics")
                 st.metric("Total Platform API Cost", f"${api_df.get('estimated_cost', pd.Series([0])).sum():.4f}")
 
-                if "user" in api_df.columns:
+                if "user_name" in api_df.columns:
                     st.markdown("### 💵 Cost Per User")
-                    st.dataframe(api_df.groupby("user")["estimated_cost"].sum().reset_index())
+                    st.dataframe(api_df.groupby("user_name")["estimated_cost"].sum().reset_index())
                     st.divider()
                     st.markdown("## 🔥 Most Active Users")
-                    st.bar_chart(api_df["user"].value_counts().head(10))
+                    st.bar_chart(api_df["user_name"].value_counts().head(10))
                     st.divider()
 
                 if "feature" in api_df.columns:

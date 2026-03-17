@@ -8,6 +8,7 @@
 #   P-4  Copilot profile persistence (Supabase load/save)
 #   P-5  Job readiness gate (warn-not-block, three-tier UX)
 #   P-6  Google Sheets → Supabase migration
+#   P-7  Fix anonymous API logs showing as "System"
 # ==========================================================
 
 import streamlit as st
@@ -239,7 +240,8 @@ if page != "🤖 AI Learning Agent":
         st.session_state.pop(k, None)
 
 # ================= SESSION TRACKING =================
-if "current_user"    not in st.session_state: st.session_state.current_user    = "System"
+# ── FIX P-7: default to "Guest" not "System" ──────────────
+if "current_user"    not in st.session_state: st.session_state.current_user    = "Guest"
 if "current_feature" not in st.session_state: st.session_state.current_feature = "General"
 
 
@@ -306,7 +308,7 @@ def log_api_usage(event_type, status):
 
 
 def safe_llm_call(model, messages, temperature=0.3, retries=3):
-    user    = st.session_state.get("current_user",    "System")
+    user    = st.session_state.get("current_user",    "Guest")
     feature = st.session_state.get("current_feature", "General")
 
     for attempt in range(retries):
@@ -494,7 +496,7 @@ def _faiss_query(query: str, top_k: int = 3) -> str:
 def add_to_memory(question: str, answer: str):
     if not VECTOR_MEMORY_AVAILABLE:
         return
-    user  = st.session_state.get("current_user", "guest")
+    user  = st.session_state.get("current_user", "Guest")
     topic = st.session_state.get("study_topic",  "general")
     if CHROMA_AVAILABLE:
         _chroma_add(user, topic, question, answer)
@@ -505,7 +507,7 @@ def add_to_memory(question: str, answer: str):
 def retrieve_memory(query: str, top_k: int = 3) -> str:
     if not VECTOR_MEMORY_AVAILABLE:
         return ""
-    user  = st.session_state.get("current_user", "guest")
+    user  = st.session_state.get("current_user", "Guest")
     topic = st.session_state.get("study_topic",  "general")
     if CHROMA_AVAILABLE:
         return _chroma_query(user, topic, query, top_k)
@@ -977,7 +979,6 @@ def render_readiness_gate(readiness: int, target_role: str) -> bool:
             f"**{target_role}** roles. Go apply!"
         )
         return True
-
     elif readiness >= 50:
         st.warning(
             f"⚠️ **{readiness}% Career Readiness** — You're making progress toward "
@@ -990,7 +991,6 @@ def render_readiness_gate(readiness: int, target_role: str) -> bool:
             "then take a Mock Assessment to measure improvement."
         )
         return True
-
     else:
         st.error(
             f"🔴 **{readiness}% Career Readiness** — Your profile is not yet competitive "
@@ -1285,11 +1285,6 @@ def check_study_history(name, education, topic, level) -> bool:
 # ═══════════════════════════════════════════════════════════
 
 def _save_full_copilot_profile(name: str, profile: dict, guidance: dict):
-    """
-    Upsert full Copilot profile + guidance to Supabase.
-    The copilot_full table has a UNIQUE constraint on name,
-    so this overwrites cleanly for returning users.
-    """
     try:
         row = {
             "name":          name,
@@ -1302,10 +1297,6 @@ def _save_full_copilot_profile(name: str, profile: dict, guidance: dict):
 
 
 def _load_copilot_profile_from_sheet(name: str):
-    """
-    Load saved Copilot profile + guidance from Supabase by name.
-    Returns (profile_dict, guidance_dict) or (None, None) if not found.
-    """
     try:
         res = (
             _get_supabase()
@@ -1552,11 +1543,11 @@ Rules:
     top_gap = profile["critical_gaps"][0] if profile["critical_gaps"] else "core skills"
     return {
         "weekly_plan": [
-            {"day": "Monday",    "task": f"Study {top_gap} — complete one tutorial chapter",       "type": "study",    "duration": "45 min", "why": f"Closes your #1 critical gap: {top_gap}"},
-            {"day": "Wednesday", "task": "Take a Mock Assessment on your skill set",                "type": "practice", "duration": "30 min", "why": f"Current mock avg is {profile['mock_avg']:.0f}% — push it above 80%"},
-            {"day": "Thursday",  "task": "Run one Interview Simulator round (Technical)",           "type": "practice", "duration": "20 min", "why": f"Interview avg {profile['interview_avg']:.1f}/10 — build confidence"},
-            {"day": "Saturday",  "task": f"Build a small project using {top_gap}",                 "type": "build",    "duration": "2 hrs",  "why": "Portfolio evidence matters more than scores to recruiters"},
-            {"day": "Sunday",    "task": "Review Skill Gap report and update learning notes",       "type": "study",    "duration": "20 min", "why": "Weekly review compounds learning"},
+            {"day": "Monday",    "task": f"Study {top_gap} — complete one tutorial chapter",     "type": "study",    "duration": "45 min", "why": f"Closes your #1 critical gap: {top_gap}"},
+            {"day": "Wednesday", "task": "Take a Mock Assessment on your skill set",              "type": "practice", "duration": "30 min", "why": f"Current mock avg is {profile['mock_avg']:.0f}% — push it above 80%"},
+            {"day": "Thursday",  "task": "Run one Interview Simulator round (Technical)",         "type": "practice", "duration": "20 min", "why": f"Interview avg {profile['interview_avg']:.1f}/10 — build confidence"},
+            {"day": "Saturday",  "task": f"Build a small project using {top_gap}",               "type": "build",    "duration": "2 hrs",  "why": "Portfolio evidence matters more than scores to recruiters"},
+            {"day": "Sunday",    "task": "Review Skill Gap report and update learning notes",     "type": "study",    "duration": "20 min", "why": "Weekly review compounds learning"},
         ],
         "strengths":         [f"{profile['skill_count']} skills on record", "Consistent platform engagement"],
         "focus_areas":       [f"Close critical gap: {top_gap}", "Improve mock test scores above 80%"],
@@ -1626,6 +1617,10 @@ if page == "🤖 AI Career Copilot":
             key="cp_returning_name",
             placeholder="Type your name and click Load →"
         )
+        # ── FIX P-7: set current_user as soon as name is typed ────────────
+        if returning_name.strip():
+            st.session_state.current_user = returning_name.strip()
+
         col_load, col_spacer = st.columns([1, 3])
         with col_load:
             if st.button("🔄 Load Saved Profile", use_container_width=True):
@@ -1656,9 +1651,12 @@ if page == "🤖 AI Career Copilot":
 
         col1, col2 = st.columns(2)
         with col1:
-            cp_name = st.text_input("Your Full Name",  key="cp_name_input",
+            cp_name = st.text_input("Your Full Name", key="cp_name_input",
                           placeholder="Used to pull your test history")
-            cp_goal = st.text_input("Target Role",     key="cp_goal_input",
+            # ── FIX P-7: set current_user as soon as name is typed ────────
+            if cp_name.strip():
+                st.session_state.current_user = cp_name.strip()
+            cp_goal = st.text_input("Target Role", key="cp_goal_input",
                           placeholder="e.g. Data Scientist, Backend Engineer")
         with col2:
             cp_edu  = st.text_input("Education Level", key="cp_edu_input",
@@ -1690,6 +1688,8 @@ if page == "🤖 AI Career Copilot":
                 if not skills_clean:
                     st.warning("⚠️ No valid skills detected."); st.stop()
 
+                st.session_state.current_user = cp_name.strip()
+
                 with st.spinner("🧠 Connecting all your SkillForge data…"):
                     domain        = detect_domain_cached(tuple(skills_clean)) or "Technology"
                     gaps          = detect_skill_gaps_cached(tuple(skills_clean), cp_goal, domain)
@@ -1714,7 +1714,7 @@ if page == "🤖 AI Career Copilot":
                 st.session_state.copilot_profile   = profile
                 st.session_state.copilot_guidance  = guidance
                 st.session_state.copilot_chat_msgs = []
-                st.session_state.current_user      = cp_name
+                st.session_state.current_user      = cp_name.strip()
 
                 with st.spinner("💾 Saving your profile for future sessions…"):
                     _save_full_copilot_profile(cp_name, profile, guidance)
@@ -1764,14 +1764,12 @@ if page == "🤖 AI Career Copilot":
             """, unsafe_allow_html=True)
 
             c1, c2, c3, c4 = st.columns(4)
-            with c1: st.metric("🎯 Career Readiness", f"{readiness}%",
-                               delta=profile["mock_trend"])
-            with c2: st.metric("🎓 Mock Test Avg",    f"{profile['mock_avg']:.1f}%",
-                               delta=f"{profile['mock_tests']} tests")
+            with c1: st.metric("🎯 Career Readiness", f"{readiness}%", delta=profile["mock_trend"])
+            with c2: st.metric("🎓 Mock Test Avg",    f"{profile['mock_avg']:.1f}%", delta=f"{profile['mock_tests']} tests")
             with c3: st.metric("🎤 Interview Avg",
                                f"{profile['interview_avg']:.1f}/10" if profile['interview_avg'] else "No data",
                                delta=f"{profile['interview_rounds']} rounds")
-            with c4: st.metric("📚 Modules Mastered",  f"{profile['learning_modules']}",
+            with c4: st.metric("📚 Modules Mastered", f"{profile['learning_modules']}",
                                delta=f"Avg {profile['learning_avg']:.0f}%")
 
             st.markdown("")
@@ -2064,7 +2062,8 @@ elif page == "🔎 Skill Intelligence":
     col1, col2 = st.columns(2)
     with col1:
         name = st.text_input("Name")
-        st.session_state.current_user = name.strip() if name else "Guest"
+        # ── FIX P-7: set current_user immediately on input ────────────────
+        st.session_state.current_user = name.strip() if name.strip() else "Guest"
     with col2:
         education = st.text_input("Education Level",
             placeholder="e.g. 10th Grade, B.Tech, MBA, Bootcamp Graduate…")
@@ -2290,7 +2289,8 @@ elif page == "🎓 Mock Assessment":
     st.header("🎓 Skill-Based Mock Assessment")
 
     candidate_name = st.text_input("Full Name")
-    st.session_state.current_user    = candidate_name or "Guest"
+    # ── FIX P-7: set current_user immediately on input ────────────────────
+    st.session_state.current_user    = candidate_name.strip() if candidate_name.strip() else "Guest"
     st.session_state.current_feature = "Mock_Assessment"
 
     if candidate_name:
@@ -2554,7 +2554,8 @@ elif page == "📚 Guided Study Chat":
     st.session_state.current_feature = "Guided_Study_Chat"
 
     candidate_name = st.text_input("Full Name")
-    st.session_state.current_user = candidate_name or "Guest"
+    # ── FIX P-7: set current_user immediately on input ────────────────────
+    st.session_state.current_user = candidate_name.strip() if candidate_name.strip() else "Guest"
 
     if candidate_name:
         perf = analyze_user_trend(candidate_name)
@@ -2570,7 +2571,7 @@ elif page == "📚 Guided Study Chat":
     if book_source:
         st.caption(f"📌 Tutor will follow the structure and style of: **{book_source}**")
 
-    level        = st.selectbox("Skill Level", ["Beginner","Intermediate","Expert"])
+    level         = st.selectbox("Skill Level", ["Beginner","Intermediate","Expert"])
     learning_goal = st.text_input("Learning Goal")
 
     if "study_chat_started" not in st.session_state:
@@ -2692,7 +2693,8 @@ elif page == "💼 AI Job Finder (Premium)":
     st.session_state.current_feature = "Job_Finder"
 
     name = st.text_input("Full Name")
-    st.session_state.current_user = name or "Guest"
+    # ── FIX P-7: set current_user immediately on input ────────────────────
+    st.session_state.current_user = name.strip() if name.strip() else "Guest"
 
     age           = st.number_input("Age", min_value=16, max_value=65, step=1)
     education     = st.text_input("Education Level", placeholder="e.g. B.Tech, MBA, Bootcamp Graduate…")
@@ -2871,6 +2873,9 @@ elif page == "🎤 AI Interview Simulator":
         col1, col2 = st.columns(2)
         with col1:
             iv_name = st.text_input("Your Full Name", key="iv_name_input")
+            # ── FIX P-7: set current_user immediately on input ────────────
+            if iv_name.strip():
+                st.session_state.current_user = iv_name.strip()
             iv_role = st.text_input("Target Role", placeholder="e.g. Data Scientist, Backend Engineer")
         with col2:
             iv_edu  = st.text_input("Education Level", placeholder="e.g. B.Tech, MBA, Self-taught")
@@ -2890,8 +2895,8 @@ elif page == "🎤 AI Interview Simulator":
                 st.warning("⚠️ Please select at least one interview round.")
             else:
                 if not check_request_limit(): st.stop()
-                skills_clean  = normalize_skills(iv_skills)
-                domain_iv     = detect_domain_cached(tuple(skills_clean)) or "Technology"
+                skills_clean    = normalize_skills(iv_skills)
+                domain_iv       = detect_domain_cached(tuple(skills_clean)) or "Technology"
                 selected_rounds = [r for r in INTERVIEW_ROUNDS if r["label"] in iv_rounds]
 
                 st.session_state.interview_started   = True
@@ -2906,7 +2911,7 @@ elif page == "🎤 AI Interview Simulator":
                 st.session_state.interview_score_log = []
                 st.session_state.interview_complete  = False
                 st.session_state.interview_q_count   = 0
-                st.session_state.current_user        = iv_name
+                st.session_state.current_user        = iv_name.strip()
                 st.rerun()
 
     else:
@@ -3086,7 +3091,10 @@ elif page == "🤖 AI Learning Agent":
 
         col1, col2 = st.columns(2)
         with col1:
-            ag_name  = st.text_input("Your Name",       key="ag_name_input")
+            ag_name  = st.text_input("Your Name", key="ag_name_input")
+            # ── FIX P-7: set current_user immediately on input ────────────
+            if ag_name.strip():
+                st.session_state.current_user = ag_name.strip()
             ag_topic = st.text_input("Topic to Master",
                 placeholder="e.g. Python, Machine Learning, SQL, React…")
         with col2:
@@ -3117,19 +3125,19 @@ elif page == "🤖 AI Learning Agent":
                 if not plan:
                     st.error("Could not generate learning plan. Please try again."); st.stop()
 
-                st.session_state.agent_started  = True
-                st.session_state.agent_name     = ag_name
-                st.session_state.agent_topic    = ag_topic
-                st.session_state.agent_edu      = ag_edu or "General"
-                st.session_state.agent_level    = ag_level
-                st.session_state.agent_goal     = ag_goal
-                st.session_state.agent_plan     = plan
-                st.session_state.agent_step     = 0
-                st.session_state.agent_scores   = []
-                st.session_state.agent_phase    = "explain"
-                st.session_state.agent_quiz     = None
+                st.session_state.agent_started        = True
+                st.session_state.agent_name           = ag_name
+                st.session_state.agent_topic          = ag_topic
+                st.session_state.agent_edu            = ag_edu or "General"
+                st.session_state.agent_level          = ag_level
+                st.session_state.agent_goal           = ag_goal
+                st.session_state.agent_plan           = plan
+                st.session_state.agent_step           = 0
+                st.session_state.agent_scores         = []
+                st.session_state.agent_phase          = "explain"
+                st.session_state.agent_quiz           = None
                 st.session_state.agent_quiz_submitted = False
-                st.session_state.current_user   = ag_name
+                st.session_state.current_user         = ag_name.strip()
                 st.rerun()
 
     else:
@@ -3218,8 +3226,8 @@ elif page == "🤖 AI Learning Agent":
                         else:
                             wrong_qs.append(q)
                     pct = round(correct / len(quiz) * 100) if quiz else 0
-                    st.session_state.agent_quiz_submitted       = True
-                    st.session_state[f"quiz_result_{step}"]     = {
+                    st.session_state.agent_quiz_submitted   = True
+                    st.session_state[f"quiz_result_{step}"] = {
                         "pct": pct, "correct": correct, "total": len(quiz), "wrong": wrong_qs,
                     }
                     st.rerun()
@@ -3362,13 +3370,13 @@ elif page == "🔐 Admin Portal":
         if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
             st.success("✅ Admin Logged In")
 
-            # ── Cached loaders for all tables ──────────────────────────────
+            # ── Cached loaders ───────────────────────────────────────────
             @st.cache_data(ttl=300)
             def load_mock_results_admin():
                 try:
                     res = _get_supabase().table("mock_results").select("*").execute()
                     return pd.DataFrame(res.data) if res.data else pd.DataFrame()
-                except Exception as e:
+                except Exception:
                     return pd.DataFrame()
 
             @st.cache_data(ttl=300)
@@ -3376,7 +3384,7 @@ elif page == "🔐 Admin Portal":
                 try:
                     res = _get_supabase().table("api_usage").select("*").execute()
                     return pd.DataFrame(res.data) if res.data else pd.DataFrame()
-                except Exception as e:
+                except Exception:
                     return pd.DataFrame()
 
             @st.cache_data(ttl=300)
@@ -3384,7 +3392,7 @@ elif page == "🔐 Admin Portal":
                 try:
                     res = _get_supabase().table("feedback").select("*").execute()
                     return pd.DataFrame(res.data) if res.data else pd.DataFrame()
-                except Exception as e:
+                except Exception:
                     return pd.DataFrame()
 
             @st.cache_data(ttl=300)
@@ -3392,7 +3400,7 @@ elif page == "🔐 Admin Portal":
                 try:
                     res = _get_supabase().table("study_history").select("*").execute()
                     return pd.DataFrame(res.data) if res.data else pd.DataFrame()
-                except Exception as e:
+                except Exception:
                     return pd.DataFrame()
 
             @st.cache_data(ttl=300)
@@ -3400,7 +3408,7 @@ elif page == "🔐 Admin Portal":
                 try:
                     res = _get_supabase().table("interview_results").select("*").execute()
                     return pd.DataFrame(res.data) if res.data else pd.DataFrame()
-                except Exception as e:
+                except Exception:
                     return pd.DataFrame()
 
             @st.cache_data(ttl=300)
@@ -3408,7 +3416,7 @@ elif page == "🔐 Admin Portal":
                 try:
                     res = _get_supabase().table("agent_progress").select("*").execute()
                     return pd.DataFrame(res.data) if res.data else pd.DataFrame()
-                except Exception as e:
+                except Exception:
                     return pd.DataFrame()
 
             @st.cache_data(ttl=300)
@@ -3416,7 +3424,7 @@ elif page == "🔐 Admin Portal":
                 try:
                     res = _get_supabase().table("job_matches").select("*").execute()
                     return pd.DataFrame(res.data) if res.data else pd.DataFrame()
-                except Exception as e:
+                except Exception:
                     return pd.DataFrame()
 
             @st.cache_data(ttl=300)
@@ -3424,10 +3432,9 @@ elif page == "🔐 Admin Portal":
                 try:
                     res = _get_supabase().table("copilot_profiles").select("*").execute()
                     return pd.DataFrame(res.data) if res.data else pd.DataFrame()
-                except Exception as e:
+                except Exception:
                     return pd.DataFrame()
 
-            # ── Helper ──────────────────────────────────────────────────────
             def metric_card(title, value):
                 st.markdown(f"""
                     <div style="background:rgba(255,255,255,0.05);padding:20px;border-radius:12px;
@@ -3441,120 +3448,72 @@ elif page == "🔐 Admin Portal":
                     return pd.to_numeric(df[col], errors="coerce")
                 return pd.Series(dtype=float)
 
-            # ── Load all tables ─────────────────────────────────────────────
-            df_mock       = load_mock_results_admin()
-            df_api        = load_api_usage_admin()
-            df_feedback   = load_feedback_admin()
-            df_study      = load_study_history_admin()
-            df_interview  = load_interview_results_admin()
-            df_agent      = load_agent_progress_admin()
-            df_jobs       = load_job_matches_admin()
-            df_copilot    = load_copilot_profiles_admin()
+            df_mock      = load_mock_results_admin()
+            df_api       = load_api_usage_admin()
+            df_feedback  = load_feedback_admin()
+            df_study     = load_study_history_admin()
+            df_interview = load_interview_results_admin()
+            df_agent     = load_agent_progress_admin()
+            df_jobs      = load_job_matches_admin()
+            df_copilot   = load_copilot_profiles_admin()
 
-            # ══════════════════════════════════════════════════════════════
-            # TABS
-            # ══════════════════════════════════════════════════════════════
             (
-                tab_overview,
-                tab_mock,
-                tab_interview,
-                tab_agent,
-                tab_study,
-                tab_jobs,
-                tab_copilot,
-                tab_feedback,
-                tab_api,
+                tab_overview, tab_mock, tab_interview, tab_agent,
+                tab_study, tab_jobs, tab_copilot, tab_feedback, tab_api,
             ) = st.tabs([
-                "📊 Overview",
-                "🎓 Mock Tests",
-                "🎤 Interviews",
-                "🤖 Learning Agent",
-                "📚 Study History",
-                "💼 Job Matches",
-                "🤖 Copilot Profiles",
-                "💬 Feedback",
-                "🧠 API Usage",
+                "📊 Overview","🎓 Mock Tests","🎤 Interviews","🤖 Learning Agent",
+                "📚 Study History","💼 Job Matches","🤖 Copilot Profiles","💬 Feedback","🧠 API Usage",
             ])
 
-            # ══════════════════════════════════════════════════════════════
-            # TAB 1 — PLATFORM OVERVIEW
-            # ══════════════════════════════════════════════════════════════
+            # ── OVERVIEW ────────────────────────────────────────────────
             with tab_overview:
                 st.markdown("## 📊 Platform Overview")
-
-                total_mock       = len(df_mock)
-                total_interviews = len(df_interview)
-                total_agent      = len(df_agent)
-                total_study      = len(df_study)
-                total_jobs       = len(df_jobs)
-                total_copilot    = len(df_copilot)
-                total_feedback   = len(df_feedback)
-                total_api        = len(df_api)
-
-                c1, c2, c3, c4 = st.columns(4)
-                with c1: metric_card("🎓 Mock Tests",      total_mock)
-                with c2: metric_card("🎤 Interviews",      total_interviews)
-                with c3: metric_card("🤖 Agent Sessions",  total_agent)
-                with c4: metric_card("📚 Study Sessions",  total_study)
-
+                c1,c2,c3,c4 = st.columns(4)
+                with c1: metric_card("🎓 Mock Tests",     len(df_mock))
+                with c2: metric_card("🎤 Interviews",     len(df_interview))
+                with c3: metric_card("🤖 Agent Sessions", len(df_agent))
+                with c4: metric_card("📚 Study Sessions", len(df_study))
                 st.markdown("")
-                c5, c6, c7, c8 = st.columns(4)
-                with c5: metric_card("💼 Job Analyses",    total_jobs)
-                with c6: metric_card("🤖 Copilot Users",   total_copilot)
-                with c7: metric_card("💬 Feedback Items",  total_feedback)
-                with c8: metric_card("🧠 API Calls",       total_api)
-
+                c5,c6,c7,c8 = st.columns(4)
+                with c5: metric_card("💼 Job Analyses",   len(df_jobs))
+                with c6: metric_card("🤖 Copilot Users",  len(df_copilot))
+                with c7: metric_card("💬 Feedback Items", len(df_feedback))
+                with c8: metric_card("🧠 API Calls",      len(df_api))
                 st.divider()
-
-                # Mock score KPIs
                 if not df_mock.empty:
                     df_mock.columns = df_mock.columns.str.strip().str.lower()
                     df_mock["percent"] = safe_num(df_mock, "percent")
-                    avg_mock  = df_mock["percent"].mean()
-                    pass_rate = (df_mock["percent"] >= 80).mean() * 100
                     st.markdown("### 🎓 Mock Test KPIs")
-                    k1, k2, k3 = st.columns(3)
-                    with k1: st.metric("Average Score",  f"{avg_mock:.1f}%")
-                    with k2: st.metric("Pass Rate (80%+)", f"{pass_rate:.1f}%")
-                    with k3: st.metric("Total Attempts", total_mock)
+                    k1,k2,k3 = st.columns(3)
+                    with k1: st.metric("Average Score",    f"{df_mock['percent'].mean():.1f}%")
+                    with k2: st.metric("Pass Rate (80%+)", f"{(df_mock['percent']>=80).mean()*100:.1f}%")
+                    with k3: st.metric("Total Attempts",   len(df_mock))
                     st.divider()
-
-                # Interview KPIs
                 if not df_interview.empty:
                     df_interview.columns = df_interview.columns.str.strip().str.lower()
                     df_interview["avg_score"] = safe_num(df_interview, "avg_score")
-                    avg_iv = df_interview["avg_score"].mean()
                     st.markdown("### 🎤 Interview KPIs")
-                    i1, i2 = st.columns(2)
-                    with i1: st.metric("Average Interview Score", f"{avg_iv:.1f}/10")
-                    with i2: st.metric("Total Sessions", total_interviews)
+                    i1,i2 = st.columns(2)
+                    with i1: st.metric("Avg Interview Score", f"{df_interview['avg_score'].mean():.1f}/10")
+                    with i2: st.metric("Total Sessions",      len(df_interview))
                     st.divider()
-
-                # Learning Agent KPIs
                 if not df_agent.empty:
                     df_agent.columns = df_agent.columns.str.strip().str.lower()
                     df_agent["avg_mastery"] = safe_num(df_agent, "avg_mastery")
-                    avg_mastery = df_agent["avg_mastery"].mean()
                     st.markdown("### 🤖 Learning Agent KPIs")
-                    a1, a2 = st.columns(2)
-                    with a1: st.metric("Average Mastery", f"{avg_mastery:.1f}%")
-                    with a2: st.metric("Total Sessions",  total_agent)
+                    a1,a2 = st.columns(2)
+                    with a1: st.metric("Average Mastery", f"{df_agent['avg_mastery'].mean():.1f}%")
+                    with a2: st.metric("Total Sessions",  len(df_agent))
                     st.divider()
-
-                # API cost summary
                 if not df_api.empty:
                     df_api.columns = df_api.columns.str.strip().str.lower()
                     df_api["estimated_cost"] = safe_num(df_api, "estimated_cost")
-                    total_cost = df_api["estimated_cost"].sum()
                     st.markdown("### 💰 Total Platform AI Cost")
-                    st.metric("Cumulative Cost", f"${total_cost:.4f}")
+                    st.metric("Cumulative Cost", f"${df_api['estimated_cost'].sum():.4f}")
 
-            # ══════════════════════════════════════════════════════════════
-            # TAB 2 — MOCK TESTS
-            # ══════════════════════════════════════════════════════════════
+            # ── MOCK TESTS ──────────────────────────────────────────────
             with tab_mock:
                 st.markdown("## 🎓 Mock Test Results")
-
                 if df_mock.empty:
                     st.info("No mock test data yet.")
                 else:
@@ -3564,288 +3523,196 @@ elif page == "🔐 Admin Portal":
                         "level of exam":"difficulty","education level":"education",
                         "name":"candidate_name","email":"candidate_email",
                     })
-                    df_mock["percent"] = safe_num(df_mock, "percent")
-                    df_mock["score"]   = safe_num(df_mock, "score")
-
-                    total_tests = len(df_mock)
-                    avg_score   = df_mock["percent"].mean()
-                    pass_rate   = (df_mock["percent"] >= 80).mean() * 100
-
-                    c1, c2, c3 = st.columns(3)
-                    with c1: metric_card("Total Tests",   total_tests)
-                    with c2: metric_card("Average Score", f"{avg_score:.2f}%")
-                    with c3: metric_card("Pass Rate",     f"{pass_rate:.2f}%")
-
+                    df_mock["percent"] = safe_num(df_mock,"percent")
+                    df_mock["score"]   = safe_num(df_mock,"score")
+                    c1,c2,c3 = st.columns(3)
+                    with c1: metric_card("Total Tests",   len(df_mock))
+                    with c2: metric_card("Average Score", f"{df_mock['percent'].mean():.2f}%")
+                    with c3: metric_card("Pass Rate",     f"{(df_mock['percent']>=80).mean()*100:.2f}%")
                     st.divider()
-
                     if "difficulty" in df_mock.columns:
                         st.markdown("### 📈 Tests by Difficulty")
                         st.bar_chart(df_mock["difficulty"].value_counts())
-
                     if "test_mode" in df_mock.columns:
                         st.markdown("### 📋 Tests by Mode")
                         st.bar_chart(df_mock["test_mode"].value_counts())
-
                     st.markdown("### 📊 Score Distribution")
                     st.bar_chart(df_mock["percent"].dropna())
-
                     if "candidate_name" in df_mock.columns:
                         st.markdown("### 🏆 Top Performers")
                         top_cols = [c for c in ["candidate_name","candidate_email","difficulty","percent","test_mode"] if c in df_mock.columns]
-                        st.dataframe(df_mock.sort_values("percent", ascending=False).head(10)[top_cols])
-
+                        st.dataframe(df_mock.sort_values("percent",ascending=False).head(10)[top_cols])
                     st.markdown("### 📂 Full Dataset")
                     st.dataframe(df_mock)
 
-            # ══════════════════════════════════════════════════════════════
-            # TAB 3 — INTERVIEWS
-            # ══════════════════════════════════════════════════════════════
+            # ── INTERVIEWS ──────────────────────────────────────────────
             with tab_interview:
                 st.markdown("## 🎤 Interview Simulator Results")
-
                 if df_interview.empty:
                     st.info("No interview data yet.")
                 else:
                     df_interview.columns = df_interview.columns.str.strip().str.lower()
-                    df_interview["avg_score"]       = safe_num(df_interview, "avg_score")
-                    df_interview["rounds_completed"] = safe_num(df_interview, "rounds_completed")
-
-                    avg_iv    = df_interview["avg_score"].mean()
-                    top_iv    = df_interview["avg_score"].max()
-                    total_iv  = len(df_interview)
-
-                    c1, c2, c3 = st.columns(3)
-                    with c1: metric_card("Total Sessions",    total_iv)
-                    with c2: metric_card("Avg Score",         f"{avg_iv:.1f}/10")
-                    with c3: metric_card("Best Score",        f"{top_iv:.1f}/10")
-
+                    df_interview["avg_score"]        = safe_num(df_interview,"avg_score")
+                    df_interview["rounds_completed"]  = safe_num(df_interview,"rounds_completed")
+                    c1,c2,c3 = st.columns(3)
+                    with c1: metric_card("Total Sessions", len(df_interview))
+                    with c2: metric_card("Avg Score",      f"{df_interview['avg_score'].mean():.1f}/10")
+                    with c3: metric_card("Best Score",     f"{df_interview['avg_score'].max():.1f}/10")
                     st.divider()
-
                     if "role" in df_interview.columns:
                         st.markdown("### 🎯 Most Practised Roles")
                         st.bar_chart(df_interview["role"].value_counts().head(10))
-
                     if "difficulty" in df_interview.columns:
                         st.markdown("### 📈 Sessions by Difficulty")
                         st.bar_chart(df_interview["difficulty"].value_counts())
-
                     st.markdown("### 📊 Score Distribution")
                     st.bar_chart(df_interview["avg_score"].dropna())
-
-                    st.markdown("### 🏆 Top Performers")
                     top_cols = [c for c in ["name","role","domain","difficulty","avg_score","rounds_completed"] if c in df_interview.columns]
-                    st.dataframe(df_interview.sort_values("avg_score", ascending=False).head(10)[top_cols])
-
+                    st.markdown("### 🏆 Top Performers")
+                    st.dataframe(df_interview.sort_values("avg_score",ascending=False).head(10)[top_cols])
                     st.markdown("### 📂 Full Dataset")
                     st.dataframe(df_interview)
 
-            # ══════════════════════════════════════════════════════════════
-            # TAB 4 — LEARNING AGENT
-            # ══════════════════════════════════════════════════════════════
+            # ── LEARNING AGENT ──────────────────────────────────────────
             with tab_agent:
                 st.markdown("## 🤖 AI Learning Agent Progress")
-
                 if df_agent.empty:
                     st.info("No learning agent data yet.")
                 else:
-                    df_agent.columns  = df_agent.columns.str.strip().str.lower()
-                    df_agent["avg_mastery"]       = safe_num(df_agent, "avg_mastery")
-                    df_agent["modules_completed"]  = safe_num(df_agent, "modules_completed")
-                    df_agent["total_modules"]      = safe_num(df_agent, "total_modules")
-
-                    avg_mastery  = df_agent["avg_mastery"].mean()
-                    total_ag     = len(df_agent)
-                    avg_modules  = df_agent["modules_completed"].mean()
-
-                    c1, c2, c3 = st.columns(3)
-                    with c1: metric_card("Total Sessions",   total_ag)
-                    with c2: metric_card("Avg Mastery",      f"{avg_mastery:.1f}%")
-                    with c3: metric_card("Avg Modules Done", f"{avg_modules:.1f}")
-
+                    df_agent.columns = df_agent.columns.str.strip().str.lower()
+                    df_agent["avg_mastery"]      = safe_num(df_agent,"avg_mastery")
+                    df_agent["modules_completed"] = safe_num(df_agent,"modules_completed")
+                    c1,c2,c3 = st.columns(3)
+                    with c1: metric_card("Total Sessions",   len(df_agent))
+                    with c2: metric_card("Avg Mastery",      f"{df_agent['avg_mastery'].mean():.1f}%")
+                    with c3: metric_card("Avg Modules Done", f"{df_agent['modules_completed'].mean():.1f}")
                     st.divider()
-
                     if "topic" in df_agent.columns:
                         st.markdown("### 📚 Most Studied Topics")
                         st.bar_chart(df_agent["topic"].value_counts().head(10))
-
                     if "level" in df_agent.columns:
                         st.markdown("### 🎯 Sessions by Difficulty")
                         st.bar_chart(df_agent["level"].value_counts())
-
-                    st.markdown("### 📊 Mastery Score Distribution")
+                    st.markdown("### 📊 Mastery Distribution")
                     st.bar_chart(df_agent["avg_mastery"].dropna())
-
-                    st.markdown("### 🏆 Top Mastery Scores")
                     top_cols = [c for c in ["name","topic","level","avg_mastery","modules_completed","total_modules"] if c in df_agent.columns]
-                    st.dataframe(df_agent.sort_values("avg_mastery", ascending=False).head(10)[top_cols])
-
+                    st.markdown("### 🏆 Top Mastery Scores")
+                    st.dataframe(df_agent.sort_values("avg_mastery",ascending=False).head(10)[top_cols])
                     st.markdown("### 📂 Full Dataset")
                     st.dataframe(df_agent)
 
-            # ══════════════════════════════════════════════════════════════
-            # TAB 5 — STUDY HISTORY
-            # ══════════════════════════════════════════════════════════════
+            # ── STUDY HISTORY ────────────────────────────────────────────
             with tab_study:
                 st.markdown("## 📚 Study History")
-
                 if df_study.empty:
                     st.info("No study history yet.")
                 else:
                     df_study.columns = df_study.columns.str.strip().str.lower()
-
-                    total_sh = len(df_study)
-                    metric_card("Total Study Sessions", total_sh)
-
+                    metric_card("Total Study Sessions", len(df_study))
                     st.divider()
-
                     if "topic" in df_study.columns:
                         st.markdown("### 📖 Most Studied Topics")
                         st.bar_chart(df_study["topic"].value_counts().head(10))
-
                     if "level" in df_study.columns:
                         st.markdown("### 🎯 Sessions by Level")
                         st.bar_chart(df_study["level"].value_counts())
-
                     if "education" in df_study.columns:
                         st.markdown("### 🎓 Sessions by Education Level")
                         st.bar_chart(df_study["education"].value_counts())
-
                     if "book_source" in df_study.columns:
                         top_books = df_study["book_source"].value_counts().head(10)
                         if not top_books.empty:
                             st.markdown("### 📕 Top Reference Books / Sources")
                             st.bar_chart(top_books)
-
                     st.markdown("### 📂 Full Dataset")
                     st.dataframe(df_study)
 
-            # ══════════════════════════════════════════════════════════════
-            # TAB 6 — JOB MATCHES
-            # ══════════════════════════════════════════════════════════════
+            # ── JOB MATCHES ──────────────────────────────────────────────
             with tab_jobs:
                 st.markdown("## 💼 Job Match Analyses")
-
                 if df_jobs.empty:
                     st.info("No job match data yet.")
                 else:
                     df_jobs.columns = df_jobs.columns.str.strip().str.lower()
-                    df_jobs["overall_score"]   = safe_num(df_jobs, "overall_score")
-                    df_jobs["semantic_score"]  = safe_num(df_jobs, "semantic_score")
-                    df_jobs["keyword_score"]   = safe_num(df_jobs, "keyword_score")
-
-                    avg_overall  = df_jobs["overall_score"].mean()
-                    avg_semantic = df_jobs["semantic_score"].mean()
-                    avg_keyword  = df_jobs["keyword_score"].mean()
-                    total_jm     = len(df_jobs)
-
-                    c1, c2, c3, c4 = st.columns(4)
-                    with c1: metric_card("Total Analyses",   total_jm)
-                    with c2: metric_card("Avg Overall Match", f"{avg_overall:.1f}%")
-                    with c3: metric_card("Avg Semantic",     f"{avg_semantic:.1f}%")
-                    with c4: metric_card("Avg Keyword",      f"{avg_keyword:.1f}%")
-
+                    df_jobs["overall_score"]  = safe_num(df_jobs,"overall_score")
+                    df_jobs["semantic_score"] = safe_num(df_jobs,"semantic_score")
+                    df_jobs["keyword_score"]  = safe_num(df_jobs,"keyword_score")
+                    c1,c2,c3,c4 = st.columns(4)
+                    with c1: metric_card("Total Analyses",    len(df_jobs))
+                    with c2: metric_card("Avg Overall Match", f"{df_jobs['overall_score'].mean():.1f}%")
+                    with c3: metric_card("Avg Semantic",      f"{df_jobs['semantic_score'].mean():.1f}%")
+                    with c4: metric_card("Avg Keyword",       f"{df_jobs['keyword_score'].mean():.1f}%")
                     st.divider()
-
                     if "target_role" in df_jobs.columns:
                         st.markdown("### 🎯 Most Searched Roles")
                         st.bar_chart(df_jobs["target_role"].value_counts().head(10))
-
-                    st.markdown("### 📊 Overall Match Score Distribution")
+                    st.markdown("### 📊 Overall Match Distribution")
                     st.bar_chart(df_jobs["overall_score"].dropna())
-
-                    st.markdown("### 🏆 Best Matches")
                     top_cols = [c for c in ["name","target_role","overall_score","semantic_score","keyword_score"] if c in df_jobs.columns]
-                    st.dataframe(df_jobs.sort_values("overall_score", ascending=False).head(10)[top_cols])
-
+                    st.markdown("### 🏆 Best Matches")
+                    st.dataframe(df_jobs.sort_values("overall_score",ascending=False).head(10)[top_cols])
                     st.markdown("### 📂 Full Dataset")
                     st.dataframe(df_jobs)
 
-            # ══════════════════════════════════════════════════════════════
-            # TAB 7 — COPILOT PROFILES
-            # ══════════════════════════════════════════════════════════════
+            # ── COPILOT PROFILES ─────────────────────────────────────────
             with tab_copilot:
                 st.markdown("## 🤖 AI Career Copilot Profiles")
-
                 if df_copilot.empty:
                     st.info("No Copilot profiles yet.")
                 else:
                     df_copilot.columns = df_copilot.columns.str.strip().str.lower()
-                    df_copilot["readiness"] = safe_num(df_copilot, "readiness")
-
-                    avg_readiness = df_copilot["readiness"].mean()
-                    total_cp      = len(df_copilot)
-
-                    c1, c2 = st.columns(2)
-                    with c1: metric_card("Total Copilot Users", total_cp)
-                    with c2: metric_card("Avg Career Readiness", f"{avg_readiness:.1f}%")
-
+                    df_copilot["readiness"] = safe_num(df_copilot,"readiness")
+                    c1,c2 = st.columns(2)
+                    with c1: metric_card("Total Copilot Users",  len(df_copilot))
+                    with c2: metric_card("Avg Career Readiness", f"{df_copilot['readiness'].mean():.1f}%")
                     st.divider()
-
                     if "goal_role" in df_copilot.columns:
                         st.markdown("### 🎯 Most Targeted Roles")
                         st.bar_chart(df_copilot["goal_role"].value_counts().head(10))
-
                     if "domain" in df_copilot.columns:
                         st.markdown("### 🧭 Top Career Domains")
                         st.bar_chart(df_copilot["domain"].value_counts().head(10))
-
                     if "readiness_label" in df_copilot.columns:
                         st.markdown("### 🏷️ Readiness Stage Breakdown")
                         st.bar_chart(df_copilot["readiness_label"].value_counts())
-
                     if "education" in df_copilot.columns:
                         st.markdown("### 🎓 Education Level Breakdown")
                         st.bar_chart(df_copilot["education"].value_counts())
-
                     st.markdown("### 📊 Career Readiness Distribution")
                     st.bar_chart(df_copilot["readiness"].dropna())
-
-                    st.markdown("### 🏆 Highest Readiness Users")
                     top_cols = [c for c in ["name","goal_role","domain","readiness","readiness_label","next_milestone"] if c in df_copilot.columns]
-                    st.dataframe(df_copilot.sort_values("readiness", ascending=False).head(10)[top_cols])
-
+                    st.markdown("### 🏆 Highest Readiness Users")
+                    st.dataframe(df_copilot.sort_values("readiness",ascending=False).head(10)[top_cols])
                     st.markdown("### 📂 Full Dataset")
                     st.dataframe(df_copilot)
 
-            # ══════════════════════════════════════════════════════════════
-            # TAB 8 — FEEDBACK
-            # ══════════════════════════════════════════════════════════════
+            # ── FEEDBACK ─────────────────────────────────────────────────
             with tab_feedback:
                 st.markdown("## 💬 User Feedback")
-
                 if df_feedback.empty:
                     st.info("No feedback submitted yet.")
                 else:
                     df_feedback.columns = df_feedback.columns.str.strip().str.lower()
-                    df_feedback["rating"] = safe_num(df_feedback, "rating")
-
-                    avg_rating   = df_feedback["rating"].mean()
-                    total_fb     = len(df_feedback)
-                    five_star    = (df_feedback["rating"] == 5).sum()
-
-                    c1, c2, c3 = st.columns(3)
-                    with c1: metric_card("Total Feedback",   total_fb)
-                    with c2: metric_card("Avg Rating",       f"{avg_rating:.1f} / 5")
-                    with c3: metric_card("5-Star Ratings",   five_star)
-
+                    df_feedback["rating"] = safe_num(df_feedback,"rating")
+                    c1,c2,c3 = st.columns(3)
+                    with c1: metric_card("Total Feedback",  len(df_feedback))
+                    with c2: metric_card("Avg Rating",      f"{df_feedback['rating'].mean():.1f} / 5")
+                    with c3: metric_card("5-Star Ratings",  int((df_feedback["rating"]==5).sum()))
                     st.divider()
-
                     st.markdown("### ⭐ Rating Distribution")
                     st.bar_chart(df_feedback["rating"].value_counts().sort_index())
-
                     if "education" in df_feedback.columns:
                         st.markdown("### 🎓 Feedback by Education Level")
                         st.bar_chart(df_feedback["education"].value_counts())
-
                     st.markdown("### 💬 Recent Feedback Comments")
                     comment_cols = [c for c in ["user_name","rating","feedback_text","education"] if c in df_feedback.columns]
                     if comment_cols:
-                        recent = df_feedback.sort_values("timestamp", ascending=False).head(20) \
+                        recent = df_feedback.sort_values("timestamp",ascending=False).head(20) \
                                  if "timestamp" in df_feedback.columns else df_feedback.tail(20)
                         for _, row in recent[comment_cols].iterrows():
-                            name_val    = row.get("user_name", "Anonymous")
-                            rating_val  = row.get("rating", "—")
-                            comment_val = row.get("feedback_text", "")
+                            name_val    = row.get("user_name","Anonymous")
+                            rating_val  = row.get("rating","—")
+                            comment_val = row.get("feedback_text","")
                             if comment_val and str(comment_val).strip():
                                 stars = "⭐" * int(rating_val) if str(rating_val).isdigit() else ""
                                 st.markdown(
@@ -3855,83 +3722,61 @@ elif page == "🔐 Admin Portal":
                                     f'<p style="margin:4px 0 0 0;color:#f1f5f9;">{comment_val}</p></div>',
                                     unsafe_allow_html=True,
                                 )
-
                     st.markdown("### 📂 Full Dataset")
                     st.dataframe(df_feedback)
 
-            # ══════════════════════════════════════════════════════════════
-            # TAB 9 — API USAGE
-            # ══════════════════════════════════════════════════════════════
+            # ── API USAGE ────────────────────────────────────────────────
             with tab_api:
                 st.markdown("## 🧠 API Usage & Cost Analytics")
-
                 if df_api.empty:
                     st.info("No API usage data yet.")
                 else:
                     df_api.columns = df_api.columns.str.strip().str.lower()
-                    df_api["estimated_cost"] = safe_num(df_api, "estimated_cost")
-                    df_api["total_tokens"]   = safe_num(df_api, "total_tokens")
-                    df_api["prompt_tokens"]  = safe_num(df_api, "prompt_tokens")
-                    df_api["completion_tokens"] = safe_num(df_api, "completion_tokens")
-
-                    total_cost   = df_api["estimated_cost"].sum()
-                    total_tokens = df_api["total_tokens"].sum()
-                    total_calls  = len(df_api)
-                    avg_tokens   = df_api["total_tokens"].mean()
-
-                    c1, c2, c3, c4 = st.columns(4)
-                    with c1: metric_card("Total API Calls",   total_calls)
-                    with c2: metric_card("Total Cost",        f"${total_cost:.4f}")
-                    with c3: metric_card("Total Tokens",      f"{int(total_tokens):,}")
-                    with c4: metric_card("Avg Tokens/Call",   f"{int(avg_tokens):,}")
-
+                    df_api["estimated_cost"]    = safe_num(df_api,"estimated_cost")
+                    df_api["total_tokens"]      = safe_num(df_api,"total_tokens")
+                    df_api["prompt_tokens"]     = safe_num(df_api,"prompt_tokens")
+                    df_api["completion_tokens"] = safe_num(df_api,"completion_tokens")
+                    c1,c2,c3,c4 = st.columns(4)
+                    with c1: metric_card("Total API Calls",  len(df_api))
+                    with c2: metric_card("Total Cost",       f"${df_api['estimated_cost'].sum():.4f}")
+                    with c3: metric_card("Total Tokens",     f"{int(df_api['total_tokens'].sum()):,}")
+                    with c4: metric_card("Avg Tokens/Call",  f"{int(df_api['total_tokens'].mean()):,}")
                     st.divider()
-
-                    # Today's stats
                     if "timestamp" in df_api.columns:
+                        # ── FIX: UTC-aware comparison ──────────────────
                         df_api["timestamp"] = pd.to_datetime(df_api["timestamp"], errors="coerce", utc=True)
                         today_start = pd.Timestamp.now(tz="UTC").normalize()
                         today_df    = df_api[
                             (df_api["timestamp"] >= today_start) &
                             (df_api["timestamp"] <  today_start + pd.Timedelta(days=1))
-                        ]                        
+                        ]
                         st.markdown("### 📅 Today's Activity")
-                        t1, t2, t3, t4 = st.columns(4)
-                        with t1: st.metric("Requests Today",     len(today_df))
-                        with t2: st.metric("Today's Cost",       f"${today_df['estimated_cost'].sum():.4f}")
-                        with t3: st.metric("Tokens Today",       f"{int(today_df['total_tokens'].sum()):,}")
+                        t1,t2,t3,t4 = st.columns(4)
+                        with t1: st.metric("Requests Today", len(today_df))
+                        with t2: st.metric("Today's Cost",   f"${today_df['estimated_cost'].sum():.4f}")
+                        with t3: st.metric("Tokens Today",   f"{int(today_df['total_tokens'].sum()):,}")
                         with t4: st.metric("Active Users Today",
-                                           today_df["user_name"].nunique()
-                                           if "user_name" in today_df.columns else 0)
+                                           today_df["user_name"].nunique() if "user_name" in today_df.columns else 0)
                         st.divider()
-
                     if "user_name" in df_api.columns:
                         st.markdown("### 🔥 Most Active Users")
                         st.bar_chart(df_api["user_name"].value_counts().head(10))
-
                         st.markdown("### 💵 Cost Per User")
-                        cost_per_user = df_api.groupby("user_name")["estimated_cost"].sum().reset_index()
-                        cost_per_user = cost_per_user.sort_values("estimated_cost", ascending=False)
-                        st.dataframe(cost_per_user)
+                        st.dataframe(df_api.groupby("user_name")["estimated_cost"].sum().reset_index()
+                                       .sort_values("estimated_cost",ascending=False))
                         st.divider()
-
                     if "feature" in df_api.columns:
                         st.markdown("### 📊 Usage by Feature")
                         st.bar_chart(df_api["feature"].value_counts())
                         st.divider()
-
                     if "model" in df_api.columns:
                         st.markdown("### 💰 Cost by AI Model")
-                        cost_by_model = df_api.groupby("model")["estimated_cost"].sum()
-                        st.bar_chart(cost_by_model)
-
+                        st.bar_chart(df_api.groupby("model")["estimated_cost"].sum())
                         st.markdown("### 📞 Calls by Model")
                         st.bar_chart(df_api["model"].value_counts())
                         st.divider()
-
                     st.markdown("### 📈 Token Usage Trend")
                     st.line_chart(df_api["total_tokens"].dropna())
-
                     st.markdown("### 📂 Full Dataset")
                     st.dataframe(df_api)
 

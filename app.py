@@ -3894,7 +3894,7 @@ elif page == "🔐 Admin Portal":
                         today_df    = df_api[
                             (df_api["timestamp"] >= today_start) &
                             (df_api["timestamp"] <  today_start + pd.Timedelta(days=1))
-                        ]                        ]
+                        ]                        
                         st.markdown("### 📅 Today's Activity")
                         t1, t2, t3, t4 = st.columns(4)
                         with t1: st.metric("Requests Today",     len(today_df))

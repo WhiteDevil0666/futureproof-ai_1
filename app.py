@@ -3362,28 +3362,72 @@ elif page == "🔐 Admin Portal":
         if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
             st.success("✅ Admin Logged In")
 
-            df = load_mock_results()
-            if df.empty:
-                st.warning("No mock test data available yet."); st.stop()
+            # ── Cached loaders for all tables ──────────────────────────────
+            @st.cache_data(ttl=300)
+            def load_mock_results_admin():
+                try:
+                    res = _get_supabase().table("mock_results").select("*").execute()
+                    return pd.DataFrame(res.data) if res.data else pd.DataFrame()
+                except Exception as e:
+                    return pd.DataFrame()
 
-            df.columns = df.columns.str.strip().str.lower()
-            df = df.rename(columns={
-                "percentage":"percent","marks":"score",
-                "level of exam":"difficulty","education level":"education",
-                "name":"candidate_name","email":"candidate_email",
-            })
-            for col in ["percent","difficulty","score"]:
-                if col not in df.columns:
-                    st.error(f"Missing column: {col}"); st.write(df.columns.tolist()); st.stop()
+            @st.cache_data(ttl=300)
+            def load_api_usage_admin():
+                try:
+                    res = _get_supabase().table("api_usage").select("*").execute()
+                    return pd.DataFrame(res.data) if res.data else pd.DataFrame()
+                except Exception as e:
+                    return pd.DataFrame()
 
-            df["percent"] = pd.to_numeric(df["percent"], errors="coerce")
-            df["score"]   = pd.to_numeric(df["score"],   errors="coerce")
+            @st.cache_data(ttl=300)
+            def load_feedback_admin():
+                try:
+                    res = _get_supabase().table("feedback").select("*").execute()
+                    return pd.DataFrame(res.data) if res.data else pd.DataFrame()
+                except Exception as e:
+                    return pd.DataFrame()
 
-            st.markdown("## 📊 Platform Overview")
-            total_tests = len(df)
-            avg_score   = df["percent"].mean()
-            pass_rate   = (df["percent"] >= 80).mean() * 100
+            @st.cache_data(ttl=300)
+            def load_study_history_admin():
+                try:
+                    res = _get_supabase().table("study_history").select("*").execute()
+                    return pd.DataFrame(res.data) if res.data else pd.DataFrame()
+                except Exception as e:
+                    return pd.DataFrame()
 
+            @st.cache_data(ttl=300)
+            def load_interview_results_admin():
+                try:
+                    res = _get_supabase().table("interview_results").select("*").execute()
+                    return pd.DataFrame(res.data) if res.data else pd.DataFrame()
+                except Exception as e:
+                    return pd.DataFrame()
+
+            @st.cache_data(ttl=300)
+            def load_agent_progress_admin():
+                try:
+                    res = _get_supabase().table("agent_progress").select("*").execute()
+                    return pd.DataFrame(res.data) if res.data else pd.DataFrame()
+                except Exception as e:
+                    return pd.DataFrame()
+
+            @st.cache_data(ttl=300)
+            def load_job_matches_admin():
+                try:
+                    res = _get_supabase().table("job_matches").select("*").execute()
+                    return pd.DataFrame(res.data) if res.data else pd.DataFrame()
+                except Exception as e:
+                    return pd.DataFrame()
+
+            @st.cache_data(ttl=300)
+            def load_copilot_profiles_admin():
+                try:
+                    res = _get_supabase().table("copilot_profiles").select("*").execute()
+                    return pd.DataFrame(res.data) if res.data else pd.DataFrame()
+                except Exception as e:
+                    return pd.DataFrame()
+
+            # ── Helper ──────────────────────────────────────────────────────
             def metric_card(title, value):
                 st.markdown(f"""
                     <div style="background:rgba(255,255,255,0.05);padding:20px;border-radius:12px;
@@ -3392,80 +3436,504 @@ elif page == "🔐 Admin Portal":
                     <h2 style="color:white;font-weight:700;">{value}</h2></div>""",
                     unsafe_allow_html=True)
 
-            c1,c2,c3 = st.columns(3)
-            with c1: metric_card("Total Tests",   total_tests)
-            with c2: metric_card("Average Score", f"{avg_score:.2f}%")
-            with c3: metric_card("Pass Rate",     f"{pass_rate:.2f}%")
+            def safe_num(df, col):
+                if col in df.columns:
+                    return pd.to_numeric(df[col], errors="coerce")
+                return pd.Series(dtype=float)
 
-            st.divider()
-            st.markdown("## 📈 Difficulty Breakdown")
-            st.bar_chart(df["difficulty"].value_counts())
-            st.divider()
-            st.markdown("## 📊 Score Distribution")
-            st.bar_chart(df["percent"])
-            st.divider()
-            st.markdown("## 🏆 Top Performers")
-            st.dataframe(df.sort_values("percent",ascending=False).head(5)[
-                ["candidate_name","candidate_email","difficulty","percent"]])
-            st.divider()
-            st.markdown("## 📂 Full Dataset")
-            st.dataframe(df)
+            # ── Load all tables ─────────────────────────────────────────────
+            df_mock       = load_mock_results_admin()
+            df_api        = load_api_usage_admin()
+            df_feedback   = load_feedback_admin()
+            df_study      = load_study_history_admin()
+            df_interview  = load_interview_results_admin()
+            df_agent      = load_agent_progress_admin()
+            df_jobs       = load_job_matches_admin()
+            df_copilot    = load_copilot_profiles_admin()
 
-            @st.cache_data(ttl=300)
-            def load_api_usage():
-                try:
-                    res = _get_supabase().table("api_usage").select("*").execute()
-                    return pd.DataFrame(res.data) if res.data else pd.DataFrame()
-                except Exception:
-                    return pd.DataFrame()
+            # ══════════════════════════════════════════════════════════════
+            # TABS
+            # ══════════════════════════════════════════════════════════════
+            (
+                tab_overview,
+                tab_mock,
+                tab_interview,
+                tab_agent,
+                tab_study,
+                tab_jobs,
+                tab_copilot,
+                tab_feedback,
+                tab_api,
+            ) = st.tabs([
+                "📊 Overview",
+                "🎓 Mock Tests",
+                "🎤 Interviews",
+                "🤖 Learning Agent",
+                "📚 Study History",
+                "💼 Job Matches",
+                "🤖 Copilot Profiles",
+                "💬 Feedback",
+                "🧠 API Usage",
+            ])
 
-            st.divider()
-            api_df = load_api_usage()
+            # ══════════════════════════════════════════════════════════════
+            # TAB 1 — PLATFORM OVERVIEW
+            # ══════════════════════════════════════════════════════════════
+            with tab_overview:
+                st.markdown("## 📊 Platform Overview")
 
-            if not api_df.empty:
-                api_df.columns = api_df.columns.str.strip().str.lower()
-                for col in ["estimated_cost","total_tokens"]:
-                    if col in api_df.columns:
-                        api_df[col] = pd.to_numeric(api_df[col], errors="coerce")
+                total_mock       = len(df_mock)
+                total_interviews = len(df_interview)
+                total_agent      = len(df_agent)
+                total_study      = len(df_study)
+                total_jobs       = len(df_jobs)
+                total_copilot    = len(df_copilot)
+                total_feedback   = len(df_feedback)
+                total_api        = len(df_api)
 
-                if "timestamp" in api_df.columns:
-                    api_df["timestamp"] = pd.to_datetime(api_df["timestamp"], errors="coerce")
-                    today_start = pd.Timestamp.now().normalize()
-                    today_df    = api_df[(api_df["timestamp"] >= today_start) &
-                                         (api_df["timestamp"] < today_start + pd.Timedelta(days=1))]
-                    st.markdown("## 🧠 Platform Health (Today)")
-                    c1,c2,c3,c4 = st.columns(4)
-                    with c1: st.metric("📊 Requests Today",     len(today_df))
-                    with c2: st.metric("⚡ Avg Tokens/Request", int(today_df["total_tokens"].mean()) if "total_tokens" in today_df and len(today_df) else 0)
-                    with c3: st.metric("💰 Today's AI Cost",    f"${today_df['estimated_cost'].sum():.4f}" if "estimated_cost" in today_df else "$0")
-                    with c4: st.metric("👥 Active Users Today", today_df["user_name"].nunique() if "user_name" in today_df.columns else 0)
+                c1, c2, c3, c4 = st.columns(4)
+                with c1: metric_card("🎓 Mock Tests",      total_mock)
+                with c2: metric_card("🎤 Interviews",      total_interviews)
+                with c3: metric_card("🤖 Agent Sessions",  total_agent)
+                with c4: metric_card("📚 Study Sessions",  total_study)
+
+                st.markdown("")
+                c5, c6, c7, c8 = st.columns(4)
+                with c5: metric_card("💼 Job Analyses",    total_jobs)
+                with c6: metric_card("🤖 Copilot Users",   total_copilot)
+                with c7: metric_card("💬 Feedback Items",  total_feedback)
+                with c8: metric_card("🧠 API Calls",       total_api)
+
+                st.divider()
+
+                # Mock score KPIs
+                if not df_mock.empty:
+                    df_mock.columns = df_mock.columns.str.strip().str.lower()
+                    df_mock["percent"] = safe_num(df_mock, "percent")
+                    avg_mock  = df_mock["percent"].mean()
+                    pass_rate = (df_mock["percent"] >= 80).mean() * 100
+                    st.markdown("### 🎓 Mock Test KPIs")
+                    k1, k2, k3 = st.columns(3)
+                    with k1: st.metric("Average Score",  f"{avg_mock:.1f}%")
+                    with k2: st.metric("Pass Rate (80%+)", f"{pass_rate:.1f}%")
+                    with k3: st.metric("Total Attempts", total_mock)
                     st.divider()
 
-                st.markdown("## 💰 API Cost Analytics")
-                st.metric("Total Platform API Cost", f"${api_df.get('estimated_cost', pd.Series([0])).sum():.4f}")
-
-                if "user_name" in api_df.columns:
-                    st.markdown("### 💵 Cost Per User")
-                    st.dataframe(api_df.groupby("user_name")["estimated_cost"].sum().reset_index())
-                    st.divider()
-                    st.markdown("## 🔥 Most Active Users")
-                    st.bar_chart(api_df["user_name"].value_counts().head(10))
-                    st.divider()
-
-                if "feature" in api_df.columns:
-                    st.markdown("## 📊 AI Usage by Feature")
-                    st.bar_chart(api_df["feature"].value_counts())
+                # Interview KPIs
+                if not df_interview.empty:
+                    df_interview.columns = df_interview.columns.str.strip().str.lower()
+                    df_interview["avg_score"] = safe_num(df_interview, "avg_score")
+                    avg_iv = df_interview["avg_score"].mean()
+                    st.markdown("### 🎤 Interview KPIs")
+                    i1, i2 = st.columns(2)
+                    with i1: st.metric("Average Interview Score", f"{avg_iv:.1f}/10")
+                    with i2: st.metric("Total Sessions", total_interviews)
                     st.divider()
 
-                if "model" in api_df.columns:
-                    st.markdown("## 💰 Cost by AI Model")
-                    st.bar_chart(api_df.groupby("model")["estimated_cost"].sum())
+                # Learning Agent KPIs
+                if not df_agent.empty:
+                    df_agent.columns = df_agent.columns.str.strip().str.lower()
+                    df_agent["avg_mastery"] = safe_num(df_agent, "avg_mastery")
+                    avg_mastery = df_agent["avg_mastery"].mean()
+                    st.markdown("### 🤖 Learning Agent KPIs")
+                    a1, a2 = st.columns(2)
+                    with a1: st.metric("Average Mastery", f"{avg_mastery:.1f}%")
+                    with a2: st.metric("Total Sessions",  total_agent)
                     st.divider()
 
-                if "total_tokens" in api_df.columns:
-                    st.markdown("## 📈 Token Usage Trend")
-                    st.line_chart(api_df["total_tokens"])
-            else:
-                st.info("No API usage data available yet.")
+                # API cost summary
+                if not df_api.empty:
+                    df_api.columns = df_api.columns.str.strip().str.lower()
+                    df_api["estimated_cost"] = safe_num(df_api, "estimated_cost")
+                    total_cost = df_api["estimated_cost"].sum()
+                    st.markdown("### 💰 Total Platform AI Cost")
+                    st.metric("Cumulative Cost", f"${total_cost:.4f}")
+
+            # ══════════════════════════════════════════════════════════════
+            # TAB 2 — MOCK TESTS
+            # ══════════════════════════════════════════════════════════════
+            with tab_mock:
+                st.markdown("## 🎓 Mock Test Results")
+
+                if df_mock.empty:
+                    st.info("No mock test data yet.")
+                else:
+                    df_mock.columns = df_mock.columns.str.strip().str.lower()
+                    df_mock = df_mock.rename(columns={
+                        "percentage":"percent","marks":"score",
+                        "level of exam":"difficulty","education level":"education",
+                        "name":"candidate_name","email":"candidate_email",
+                    })
+                    df_mock["percent"] = safe_num(df_mock, "percent")
+                    df_mock["score"]   = safe_num(df_mock, "score")
+
+                    total_tests = len(df_mock)
+                    avg_score   = df_mock["percent"].mean()
+                    pass_rate   = (df_mock["percent"] >= 80).mean() * 100
+
+                    c1, c2, c3 = st.columns(3)
+                    with c1: metric_card("Total Tests",   total_tests)
+                    with c2: metric_card("Average Score", f"{avg_score:.2f}%")
+                    with c3: metric_card("Pass Rate",     f"{pass_rate:.2f}%")
+
+                    st.divider()
+
+                    if "difficulty" in df_mock.columns:
+                        st.markdown("### 📈 Tests by Difficulty")
+                        st.bar_chart(df_mock["difficulty"].value_counts())
+
+                    if "test_mode" in df_mock.columns:
+                        st.markdown("### 📋 Tests by Mode")
+                        st.bar_chart(df_mock["test_mode"].value_counts())
+
+                    st.markdown("### 📊 Score Distribution")
+                    st.bar_chart(df_mock["percent"].dropna())
+
+                    if "candidate_name" in df_mock.columns:
+                        st.markdown("### 🏆 Top Performers")
+                        top_cols = [c for c in ["candidate_name","candidate_email","difficulty","percent","test_mode"] if c in df_mock.columns]
+                        st.dataframe(df_mock.sort_values("percent", ascending=False).head(10)[top_cols])
+
+                    st.markdown("### 📂 Full Dataset")
+                    st.dataframe(df_mock)
+
+            # ══════════════════════════════════════════════════════════════
+            # TAB 3 — INTERVIEWS
+            # ══════════════════════════════════════════════════════════════
+            with tab_interview:
+                st.markdown("## 🎤 Interview Simulator Results")
+
+                if df_interview.empty:
+                    st.info("No interview data yet.")
+                else:
+                    df_interview.columns = df_interview.columns.str.strip().str.lower()
+                    df_interview["avg_score"]       = safe_num(df_interview, "avg_score")
+                    df_interview["rounds_completed"] = safe_num(df_interview, "rounds_completed")
+
+                    avg_iv    = df_interview["avg_score"].mean()
+                    top_iv    = df_interview["avg_score"].max()
+                    total_iv  = len(df_interview)
+
+                    c1, c2, c3 = st.columns(3)
+                    with c1: metric_card("Total Sessions",    total_iv)
+                    with c2: metric_card("Avg Score",         f"{avg_iv:.1f}/10")
+                    with c3: metric_card("Best Score",        f"{top_iv:.1f}/10")
+
+                    st.divider()
+
+                    if "role" in df_interview.columns:
+                        st.markdown("### 🎯 Most Practised Roles")
+                        st.bar_chart(df_interview["role"].value_counts().head(10))
+
+                    if "difficulty" in df_interview.columns:
+                        st.markdown("### 📈 Sessions by Difficulty")
+                        st.bar_chart(df_interview["difficulty"].value_counts())
+
+                    st.markdown("### 📊 Score Distribution")
+                    st.bar_chart(df_interview["avg_score"].dropna())
+
+                    st.markdown("### 🏆 Top Performers")
+                    top_cols = [c for c in ["name","role","domain","difficulty","avg_score","rounds_completed"] if c in df_interview.columns]
+                    st.dataframe(df_interview.sort_values("avg_score", ascending=False).head(10)[top_cols])
+
+                    st.markdown("### 📂 Full Dataset")
+                    st.dataframe(df_interview)
+
+            # ══════════════════════════════════════════════════════════════
+            # TAB 4 — LEARNING AGENT
+            # ══════════════════════════════════════════════════════════════
+            with tab_agent:
+                st.markdown("## 🤖 AI Learning Agent Progress")
+
+                if df_agent.empty:
+                    st.info("No learning agent data yet.")
+                else:
+                    df_agent.columns  = df_agent.columns.str.strip().str.lower()
+                    df_agent["avg_mastery"]       = safe_num(df_agent, "avg_mastery")
+                    df_agent["modules_completed"]  = safe_num(df_agent, "modules_completed")
+                    df_agent["total_modules"]      = safe_num(df_agent, "total_modules")
+
+                    avg_mastery  = df_agent["avg_mastery"].mean()
+                    total_ag     = len(df_agent)
+                    avg_modules  = df_agent["modules_completed"].mean()
+
+                    c1, c2, c3 = st.columns(3)
+                    with c1: metric_card("Total Sessions",   total_ag)
+                    with c2: metric_card("Avg Mastery",      f"{avg_mastery:.1f}%")
+                    with c3: metric_card("Avg Modules Done", f"{avg_modules:.1f}")
+
+                    st.divider()
+
+                    if "topic" in df_agent.columns:
+                        st.markdown("### 📚 Most Studied Topics")
+                        st.bar_chart(df_agent["topic"].value_counts().head(10))
+
+                    if "level" in df_agent.columns:
+                        st.markdown("### 🎯 Sessions by Difficulty")
+                        st.bar_chart(df_agent["level"].value_counts())
+
+                    st.markdown("### 📊 Mastery Score Distribution")
+                    st.bar_chart(df_agent["avg_mastery"].dropna())
+
+                    st.markdown("### 🏆 Top Mastery Scores")
+                    top_cols = [c for c in ["name","topic","level","avg_mastery","modules_completed","total_modules"] if c in df_agent.columns]
+                    st.dataframe(df_agent.sort_values("avg_mastery", ascending=False).head(10)[top_cols])
+
+                    st.markdown("### 📂 Full Dataset")
+                    st.dataframe(df_agent)
+
+            # ══════════════════════════════════════════════════════════════
+            # TAB 5 — STUDY HISTORY
+            # ══════════════════════════════════════════════════════════════
+            with tab_study:
+                st.markdown("## 📚 Study History")
+
+                if df_study.empty:
+                    st.info("No study history yet.")
+                else:
+                    df_study.columns = df_study.columns.str.strip().str.lower()
+
+                    total_sh = len(df_study)
+                    metric_card("Total Study Sessions", total_sh)
+
+                    st.divider()
+
+                    if "topic" in df_study.columns:
+                        st.markdown("### 📖 Most Studied Topics")
+                        st.bar_chart(df_study["topic"].value_counts().head(10))
+
+                    if "level" in df_study.columns:
+                        st.markdown("### 🎯 Sessions by Level")
+                        st.bar_chart(df_study["level"].value_counts())
+
+                    if "education" in df_study.columns:
+                        st.markdown("### 🎓 Sessions by Education Level")
+                        st.bar_chart(df_study["education"].value_counts())
+
+                    if "book_source" in df_study.columns:
+                        top_books = df_study["book_source"].value_counts().head(10)
+                        if not top_books.empty:
+                            st.markdown("### 📕 Top Reference Books / Sources")
+                            st.bar_chart(top_books)
+
+                    st.markdown("### 📂 Full Dataset")
+                    st.dataframe(df_study)
+
+            # ══════════════════════════════════════════════════════════════
+            # TAB 6 — JOB MATCHES
+            # ══════════════════════════════════════════════════════════════
+            with tab_jobs:
+                st.markdown("## 💼 Job Match Analyses")
+
+                if df_jobs.empty:
+                    st.info("No job match data yet.")
+                else:
+                    df_jobs.columns = df_jobs.columns.str.strip().str.lower()
+                    df_jobs["overall_score"]   = safe_num(df_jobs, "overall_score")
+                    df_jobs["semantic_score"]  = safe_num(df_jobs, "semantic_score")
+                    df_jobs["keyword_score"]   = safe_num(df_jobs, "keyword_score")
+
+                    avg_overall  = df_jobs["overall_score"].mean()
+                    avg_semantic = df_jobs["semantic_score"].mean()
+                    avg_keyword  = df_jobs["keyword_score"].mean()
+                    total_jm     = len(df_jobs)
+
+                    c1, c2, c3, c4 = st.columns(4)
+                    with c1: metric_card("Total Analyses",   total_jm)
+                    with c2: metric_card("Avg Overall Match", f"{avg_overall:.1f}%")
+                    with c3: metric_card("Avg Semantic",     f"{avg_semantic:.1f}%")
+                    with c4: metric_card("Avg Keyword",      f"{avg_keyword:.1f}%")
+
+                    st.divider()
+
+                    if "target_role" in df_jobs.columns:
+                        st.markdown("### 🎯 Most Searched Roles")
+                        st.bar_chart(df_jobs["target_role"].value_counts().head(10))
+
+                    st.markdown("### 📊 Overall Match Score Distribution")
+                    st.bar_chart(df_jobs["overall_score"].dropna())
+
+                    st.markdown("### 🏆 Best Matches")
+                    top_cols = [c for c in ["name","target_role","overall_score","semantic_score","keyword_score"] if c in df_jobs.columns]
+                    st.dataframe(df_jobs.sort_values("overall_score", ascending=False).head(10)[top_cols])
+
+                    st.markdown("### 📂 Full Dataset")
+                    st.dataframe(df_jobs)
+
+            # ══════════════════════════════════════════════════════════════
+            # TAB 7 — COPILOT PROFILES
+            # ══════════════════════════════════════════════════════════════
+            with tab_copilot:
+                st.markdown("## 🤖 AI Career Copilot Profiles")
+
+                if df_copilot.empty:
+                    st.info("No Copilot profiles yet.")
+                else:
+                    df_copilot.columns = df_copilot.columns.str.strip().str.lower()
+                    df_copilot["readiness"] = safe_num(df_copilot, "readiness")
+
+                    avg_readiness = df_copilot["readiness"].mean()
+                    total_cp      = len(df_copilot)
+
+                    c1, c2 = st.columns(2)
+                    with c1: metric_card("Total Copilot Users", total_cp)
+                    with c2: metric_card("Avg Career Readiness", f"{avg_readiness:.1f}%")
+
+                    st.divider()
+
+                    if "goal_role" in df_copilot.columns:
+                        st.markdown("### 🎯 Most Targeted Roles")
+                        st.bar_chart(df_copilot["goal_role"].value_counts().head(10))
+
+                    if "domain" in df_copilot.columns:
+                        st.markdown("### 🧭 Top Career Domains")
+                        st.bar_chart(df_copilot["domain"].value_counts().head(10))
+
+                    if "readiness_label" in df_copilot.columns:
+                        st.markdown("### 🏷️ Readiness Stage Breakdown")
+                        st.bar_chart(df_copilot["readiness_label"].value_counts())
+
+                    if "education" in df_copilot.columns:
+                        st.markdown("### 🎓 Education Level Breakdown")
+                        st.bar_chart(df_copilot["education"].value_counts())
+
+                    st.markdown("### 📊 Career Readiness Distribution")
+                    st.bar_chart(df_copilot["readiness"].dropna())
+
+                    st.markdown("### 🏆 Highest Readiness Users")
+                    top_cols = [c for c in ["name","goal_role","domain","readiness","readiness_label","next_milestone"] if c in df_copilot.columns]
+                    st.dataframe(df_copilot.sort_values("readiness", ascending=False).head(10)[top_cols])
+
+                    st.markdown("### 📂 Full Dataset")
+                    st.dataframe(df_copilot)
+
+            # ══════════════════════════════════════════════════════════════
+            # TAB 8 — FEEDBACK
+            # ══════════════════════════════════════════════════════════════
+            with tab_feedback:
+                st.markdown("## 💬 User Feedback")
+
+                if df_feedback.empty:
+                    st.info("No feedback submitted yet.")
+                else:
+                    df_feedback.columns = df_feedback.columns.str.strip().str.lower()
+                    df_feedback["rating"] = safe_num(df_feedback, "rating")
+
+                    avg_rating   = df_feedback["rating"].mean()
+                    total_fb     = len(df_feedback)
+                    five_star    = (df_feedback["rating"] == 5).sum()
+
+                    c1, c2, c3 = st.columns(3)
+                    with c1: metric_card("Total Feedback",   total_fb)
+                    with c2: metric_card("Avg Rating",       f"{avg_rating:.1f} / 5")
+                    with c3: metric_card("5-Star Ratings",   five_star)
+
+                    st.divider()
+
+                    st.markdown("### ⭐ Rating Distribution")
+                    st.bar_chart(df_feedback["rating"].value_counts().sort_index())
+
+                    if "education" in df_feedback.columns:
+                        st.markdown("### 🎓 Feedback by Education Level")
+                        st.bar_chart(df_feedback["education"].value_counts())
+
+                    st.markdown("### 💬 Recent Feedback Comments")
+                    comment_cols = [c for c in ["user_name","rating","feedback_text","education"] if c in df_feedback.columns]
+                    if comment_cols:
+                        recent = df_feedback.sort_values("timestamp", ascending=False).head(20) \
+                                 if "timestamp" in df_feedback.columns else df_feedback.tail(20)
+                        for _, row in recent[comment_cols].iterrows():
+                            name_val    = row.get("user_name", "Anonymous")
+                            rating_val  = row.get("rating", "—")
+                            comment_val = row.get("feedback_text", "")
+                            if comment_val and str(comment_val).strip():
+                                stars = "⭐" * int(rating_val) if str(rating_val).isdigit() else ""
+                                st.markdown(
+                                    f'<div style="background:rgba(255,255,255,0.04);border-left:3px solid #6366f1;'
+                                    f'border-radius:0 10px 10px 0;padding:10px 14px;margin-bottom:8px;">'
+                                    f'<p style="margin:0;color:#a5b4fc;font-size:0.8em;">{name_val} · {stars}</p>'
+                                    f'<p style="margin:4px 0 0 0;color:#f1f5f9;">{comment_val}</p></div>',
+                                    unsafe_allow_html=True,
+                                )
+
+                    st.markdown("### 📂 Full Dataset")
+                    st.dataframe(df_feedback)
+
+            # ══════════════════════════════════════════════════════════════
+            # TAB 9 — API USAGE
+            # ══════════════════════════════════════════════════════════════
+            with tab_api:
+                st.markdown("## 🧠 API Usage & Cost Analytics")
+
+                if df_api.empty:
+                    st.info("No API usage data yet.")
+                else:
+                    df_api.columns = df_api.columns.str.strip().str.lower()
+                    df_api["estimated_cost"] = safe_num(df_api, "estimated_cost")
+                    df_api["total_tokens"]   = safe_num(df_api, "total_tokens")
+                    df_api["prompt_tokens"]  = safe_num(df_api, "prompt_tokens")
+                    df_api["completion_tokens"] = safe_num(df_api, "completion_tokens")
+
+                    total_cost   = df_api["estimated_cost"].sum()
+                    total_tokens = df_api["total_tokens"].sum()
+                    total_calls  = len(df_api)
+                    avg_tokens   = df_api["total_tokens"].mean()
+
+                    c1, c2, c3, c4 = st.columns(4)
+                    with c1: metric_card("Total API Calls",   total_calls)
+                    with c2: metric_card("Total Cost",        f"${total_cost:.4f}")
+                    with c3: metric_card("Total Tokens",      f"{int(total_tokens):,}")
+                    with c4: metric_card("Avg Tokens/Call",   f"{int(avg_tokens):,}")
+
+                    st.divider()
+
+                    # Today's stats
+                    if "timestamp" in df_api.columns:
+                        df_api["timestamp"] = pd.to_datetime(df_api["timestamp"], errors="coerce")
+                        today_start = pd.Timestamp.now().normalize()
+                        today_df    = df_api[
+                            (df_api["timestamp"] >= today_start) &
+                            (df_api["timestamp"] <  today_start + pd.Timedelta(days=1))
+                        ]
+                        st.markdown("### 📅 Today's Activity")
+                        t1, t2, t3, t4 = st.columns(4)
+                        with t1: st.metric("Requests Today",     len(today_df))
+                        with t2: st.metric("Today's Cost",       f"${today_df['estimated_cost'].sum():.4f}")
+                        with t3: st.metric("Tokens Today",       f"{int(today_df['total_tokens'].sum()):,}")
+                        with t4: st.metric("Active Users Today",
+                                           today_df["user_name"].nunique()
+                                           if "user_name" in today_df.columns else 0)
+                        st.divider()
+
+                    if "user_name" in df_api.columns:
+                        st.markdown("### 🔥 Most Active Users")
+                        st.bar_chart(df_api["user_name"].value_counts().head(10))
+
+                        st.markdown("### 💵 Cost Per User")
+                        cost_per_user = df_api.groupby("user_name")["estimated_cost"].sum().reset_index()
+                        cost_per_user = cost_per_user.sort_values("estimated_cost", ascending=False)
+                        st.dataframe(cost_per_user)
+                        st.divider()
+
+                    if "feature" in df_api.columns:
+                        st.markdown("### 📊 Usage by Feature")
+                        st.bar_chart(df_api["feature"].value_counts())
+                        st.divider()
+
+                    if "model" in df_api.columns:
+                        st.markdown("### 💰 Cost by AI Model")
+                        cost_by_model = df_api.groupby("model")["estimated_cost"].sum()
+                        st.bar_chart(cost_by_model)
+
+                        st.markdown("### 📞 Calls by Model")
+                        st.bar_chart(df_api["model"].value_counts())
+                        st.divider()
+
+                    st.markdown("### 📈 Token Usage Trend")
+                    st.line_chart(df_api["total_tokens"].dropna())
+
+                    st.markdown("### 📂 Full Dataset")
+                    st.dataframe(df_api)
+
         else:
             st.error("❌ Invalid Admin Credentials")

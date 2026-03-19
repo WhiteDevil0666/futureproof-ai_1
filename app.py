@@ -1,7 +1,7 @@
 # ==========================================================
-# FUTUREPROOF AI – v5.3 Production Build
+# FUTUREPROOF AI – v5.4 Beta Launch Build
 # ──────────────────────────────────────────────────────────
-# v5.3 PATCHES APPLIED:
+# v5.3 PATCHES:
 #   P-1  Prompt injection hardening
 #   P-2  ChromaDB client caching
 #   P-3  Copilot plan anti-drift
@@ -13,6 +13,13 @@
 #   P-9  Voice input in AI Interview Simulator
 #   P-10 Remove timer from Mock Assessment
 #   P-11 Login / Profile system at app startup
+# v5.4 BETA UX UPGRADES:
+#   U-1  "Start Here" guided onboarding screen (post-login)
+#   U-2  Career Score hook shown immediately after analysis
+#   U-3  Guided 5-step career journey flow (auto-progression)
+#   U-4  Emotional / motivational feedback language throughout
+#   U-5  Sidebar simplified — admin hidden, steps visible
+#   U-6  Progress ribbon showing user's journey stage
 # ==========================================================
 
 import streamlit as st
@@ -166,8 +173,17 @@ def apply_custom_css():
 
 apply_custom_css()
 
-st.markdown('<div class="main-title">⚙️ SkillForge – Skill Intelligence Engine</div>', unsafe_allow_html=True)
-st.caption("Analyze Skills • Detect Gaps • Build Career Intelligence")
+# ── Shown only after login — minimal branding bar ─────────────────────
+st.markdown("""
+<div style="display:flex;align-items:center;gap:10px;padding:4px 0 10px 0;">
+  <span style="font-size:1.5em;">⚙️</span>
+  <span style="font-weight:800;font-size:1.15em;color:#ffffff;letter-spacing:-0.02em;">SkillForge</span>
+  <span style="background:rgba(99,102,241,0.25);color:#a5b4fc;font-size:0.7em;
+        font-weight:700;padding:2px 8px;border-radius:20px;border:1px solid rgba(99,102,241,0.4);">
+    BETA
+  </span>
+</div>
+""", unsafe_allow_html=True)
 
 # ================= ENV CONFIG =================
 ADMIN_USERNAME = os.getenv("ADMIN_USER")
@@ -349,20 +365,50 @@ if _logged_name:
             del st.session_state[k]
         st.rerun()
 
-st.sidebar.markdown("## 📌 Navigation")
+# ── U-5: Simplified sidebar — journey-based, admin hidden ─────────────
+st.sidebar.markdown("## 🗺️ Your Career Journey")
+
+# Show journey progress ribbon
+_journey_step = st.session_state.get("journey_step", 0)
+_step_labels  = ["📊 Analyze", "🔍 Gaps", "📚 Learn", "🎓 Practice", "🎤 Interview", "💼 Apply"]
+_progress_pct = int((_journey_step / max(len(_step_labels)-1, 1)) * 100)
+
+st.sidebar.markdown(
+    f'<div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:10px 12px;margin-bottom:12px;">'
+    f'<p style="margin:0 0 6px 0;font-size:0.72em;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em;">Journey Progress</p>'
+    f'<div style="background:rgba(255,255,255,0.1);border-radius:6px;padding:2px;">'
+    f'<div style="background:linear-gradient(90deg,#6366f1,#22c55e);width:{_progress_pct}%;height:8px;border-radius:5px;transition:width 0.5s;"></div></div>'
+    f'<p style="margin:4px 0 0 0;font-size:0.75em;color:#a5b4fc;font-weight:600;">'
+    f'Step {_journey_step+1} of {len(_step_labels)} — {_step_labels[min(_journey_step,len(_step_labels)-1)]}</p>'
+    f'</div>',
+    unsafe_allow_html=True,
+)
+
+# Core navigation — beta users see clean labels
 page = st.sidebar.radio("", [
+    "🏠 Start Here",
     "🤖 AI Career Copilot",
     "🔎 Skill Intelligence",
     "🎓 Mock Assessment",
     "📚 Guided Study Chat",
     "🤖 AI Learning Agent",
     "🎤 AI Interview Simulator",
-    "💼 AI Job Finder (Premium)",
-    "🔐 Admin Portal",
+    "💼 AI Job Finder",
 ])
 
+# Admin portal — only shown if env var is set (keeps beta UI clean)
+if os.getenv("ADMIN_USER"):
+    with st.sidebar.expander("🔐 Admin", expanded=False):
+        if st.button("Open Admin Portal", use_container_width=True, key="sidebar_admin_btn"):
+            st.session_state.go_admin = True
+            st.rerun()
+
+if st.session_state.get("go_admin"):
+    page = "🔐 Admin Portal"
+    st.session_state.go_admin = False
+
 remaining = MAX_REQUESTS_PER_SESSION - st.session_state.get("request_count", 0)
-st.sidebar.caption(f"🤖 AI Requests Remaining: {remaining}")
+st.sidebar.caption(f"🤖 AI Calls Remaining: {remaining}")
 
 if page != "🤖 AI Career Copilot":
     for k in ["copilot_profile", "copilot_guidance", "copilot_started", "copilot_chat_msgs"]:
@@ -376,7 +422,7 @@ if page != "📚 Guided Study Chat":
     for k in ["study_chat_started", "study_messages", "study_context"]:
         st.session_state.pop(k, None)
 
-if page != "💼 AI Job Finder (Premium)":
+if page not in ("💼 AI Job Finder", "💼 AI Job Finder (Premium)"):
     st.session_state.pop("job_analysis_result", None)
 
 if page != "🎤 AI Interview Simulator":
@@ -393,6 +439,13 @@ if page != "🤖 AI Learning Agent":
 # ================= SESSION TRACKING =================
 if "current_user"    not in st.session_state: st.session_state.current_user    = "Guest"
 if "current_feature" not in st.session_state: st.session_state.current_feature = "General"
+if "journey_step"    not in st.session_state: st.session_state.journey_step    = 0
+# U-1: First-time users always land on Start Here
+if "has_visited"     not in st.session_state:
+    st.session_state.has_visited = True
+    if page != "🏠 Start Here":
+        # Softly nudge — don't hard-redirect so sidebar choice still works
+        st.session_state.show_start_nudge = True
 
 
 # ══════════════════════════════════════════════════════════
@@ -1916,6 +1969,8 @@ if page == "🤖 AI Career Copilot":
                 st.session_state.copilot_guidance  = guidance
                 st.session_state.copilot_chat_msgs = []
                 st.session_state.current_user      = cp_name.strip()
+                # U-3: advance journey progress
+                st.session_state.journey_step = max(st.session_state.get("journey_step", 0), 1)
 
                 with st.spinner("💾 Saving your profile…"):
                     _save_full_copilot_profile(cp_name, profile, guidance)
@@ -2331,6 +2386,21 @@ elif page == "🔎 Skill Intelligence":
             elif total_score >= 50: st.warning("⚠️ **Developing Profile** — Targeted improvements will boost your chances.")
             else:                   st.error("❌ **Early Stage** — Build core skills before applying.")
 
+            # ── U-2 + U-4: Career Score Hook & Emotional Feedback ─────
+            if   total_score >= 80: _emo = "🔥 You're in the top tier for this role. Start applying this week."
+            elif total_score >= 65: _emo = f"💪 You're close! Just {len(growth)} growth skills away from being job-competitive."
+            elif total_score >= 50: _emo = "⚡ Solid start. Close your critical gaps and your score jumps fast."
+            else:                   _emo = "🎯 Every expert was once a beginner. Focus on the top 2 critical gaps first."
+            st.markdown(f'''
+            <div style="background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.3);
+                 border-radius:14px;padding:16px 20px;margin:12px 0;">
+              <p style="margin:0;color:#a5b4fc;font-size:0.78em;font-weight:700;
+                   text-transform:uppercase;letter-spacing:0.08em;">🤖 Copilot Insight</p>
+              <p style="margin:6px 0 0 0;color:#f1f5f9;font-size:1em;font-weight:500;">{_emo}</p>
+            </div>''', unsafe_allow_html=True)
+            # Update journey tracker
+            st.session_state.journey_step = max(st.session_state.get("journey_step", 0), 1)
+
             st.divider()
             st.markdown("### 📌 Score Breakdown")
             ca, cb, cc = st.columns(3)
@@ -2435,6 +2505,22 @@ elif page == "🔎 Skill Intelligence":
                         </div>""", unsafe_allow_html=True)
             else:
                 st.info("Skill gap data unavailable.")
+
+        # ── U-3: Guided next-step nudge ──────────────────────────────
+        st.markdown("""
+        <div style="background:linear-gradient(90deg,rgba(99,102,241,0.15),rgba(59,130,246,0.10));
+             border:1px solid rgba(99,102,241,0.3);border-radius:14px;
+             padding:16px 22px;margin:20px 0;">
+          <p style="margin:0 0 6px 0;color:#a5b4fc;font-weight:700;font-size:0.85em;
+               text-transform:uppercase;letter-spacing:0.07em;">🗺️ What to do next</p>
+          <p style="margin:0;color:#f1f5f9;font-weight:500;">
+            👉 <strong>Step 2:</strong> Go to <strong>🤖 AI Career Copilot</strong>
+            for your personalised weekly plan based on these gaps.<br>
+            👉 <strong>Step 3:</strong> Go to <strong>🤖 AI Learning Agent</strong>
+            and start learning your top critical skill.
+          </p>
+        </div>
+        """, unsafe_allow_html=True)
 
         st.divider()
         rating        = st.slider("How useful was this analysis?", 1, 5, 4)
@@ -2681,9 +2767,52 @@ elif page == "🎓 Mock Assessment":
                 st.markdown(f"### Percentage: {st.session_state.get('final_percent',0):.2f}%")
 
             fp = st.session_state.get("final_percent",0)
-            if   fp >= 80: st.success("✅ Qualified (80%+)")
-            elif fp >= 60: st.warning("⚠️ Average (60-79%) — Keep practising!")
-            else:          st.error("❌ Not Qualified (<60%) — Review fundamentals.")
+            # ── U-4: Emotional result feedback ────────────────────────
+            if   fp >= 80:
+                st.success("✅ Qualified (80%+)")
+                st.markdown(f"""
+                <div style="background:rgba(34,197,94,0.10);border:1px solid rgba(34,197,94,0.3);
+                     border-radius:12px;padding:14px 18px;margin-top:8px;">
+                  <p style="margin:0;color:#86efac;font-weight:600;">
+                    🔥 Excellent! You scored {fp:.0f}% — you're ready to face real technical interviews.
+                    Jump to the <strong>Interview Simulator</strong> as your next step.
+                  </p>
+                </div>""", unsafe_allow_html=True)
+            elif fp >= 60:
+                st.warning("⚠️ Average (60-79%) — Keep practising!")
+                st.markdown(f"""
+                <div style="background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.3);
+                     border-radius:12px;padding:14px 18px;margin-top:8px;">
+                  <p style="margin:0;color:#fcd34d;font-weight:600;">
+                    💪 {fp:.0f}% is a good score! You're {80-fp:.0f}% away from the qualified threshold.
+                    Use the <strong>AI Learning Agent</strong> to close those gaps, then retake.
+                  </p>
+                </div>""", unsafe_allow_html=True)
+            else:
+                st.error("❌ Not Qualified (<60%) — Review fundamentals.")
+                st.markdown(f"""
+                <div style="background:rgba(239,68,68,0.10);border:1px solid rgba(239,68,68,0.3);
+                     border-radius:12px;padding:14px 18px;margin-top:8px;">
+                  <p style="margin:0;color:#fca5a5;font-weight:600;">
+                    🎯 {fp:.0f}% — don't worry, this is exactly why you practise!
+                    Go to <strong>AI Learning Agent</strong>, study the topic, then come back and crush it.
+                  </p>
+                </div>""", unsafe_allow_html=True)
+            # Update journey tracker
+            st.session_state.journey_step = max(st.session_state.get("journey_step", 0), 3)
+
+            # ── U-3: Next step nudge ─────────────────────────────────
+            st.markdown("""
+            <div style="background:linear-gradient(90deg,rgba(99,102,241,0.15),rgba(59,130,246,0.10));
+                 border:1px solid rgba(99,102,241,0.3);border-radius:14px;padding:16px 22px;margin:16px 0;">
+              <p style="margin:0 0 4px 0;color:#a5b4fc;font-weight:700;font-size:0.85em;
+                   text-transform:uppercase;letter-spacing:0.07em;">🗺️ What to do next</p>
+              <p style="margin:0;color:#f1f5f9;font-weight:500;">
+                👉 Go to <strong>🎤 AI Interview Simulator</strong> — practice 3 rounds and get a full debrief.<br>
+                👉 Or go to <strong>💼 AI Job Finder</strong> if your score was 80%+.
+              </p>
+            </div>
+            """, unsafe_allow_html=True)
 
             if not st.session_state.get("result_saved"):
                 save_mock_result({
@@ -2840,7 +2969,7 @@ elif page == "📚 Guided Study Chat":
 # ████████████████  AI JOB FINDER  ████████████████████████████████████
 # ══════════════════════════════════════════════════════════════════════
 
-elif page == "💼 AI Job Finder (Premium)":
+elif page in ("💼 AI Job Finder", "💼 AI Job Finder (Premium)"):
 
     st.header("💼 AI Career Job Finder")
     st.success("🎯 AI-Powered Smart Job Matching Activated")
@@ -3258,6 +3387,16 @@ elif page == "🎤 AI Interview Simulator":
                     debrief = generate_interview_report(iv_role, score_log)
                 st.info(debrief)
 
+                # ── U-4: Emotional closing message ─────────────────────
+                if avg_final >= 7:
+                    st.success(f"🔥 {avg_final}/10 — Impressive! You're ready to face real interviews. Go apply.")
+                elif avg_final >= 5:
+                    st.warning(f"💪 {avg_final}/10 — Solid performance. Practice 2 more rounds and you'll be confident.")
+                else:
+                    st.info(f"🎯 {avg_final}/10 — Great first attempt! Every round makes you sharper. Keep going.")
+                # Update journey tracker
+                st.session_state.journey_step = max(st.session_state.get("journey_step", 0), 4)
+
                 save_interview_result({
                     "name":             iv_name,
                     "role":             iv_role,
@@ -3529,9 +3668,38 @@ elif page == "🤖 AI Learning Agent":
                     unsafe_allow_html=True,
                 )
 
-                if   avg >= 80: st.success("✅ **Strong mastery** — ready to apply this knowledge.")
-                elif avg >= 60: st.warning("⚠️ **Good progress** — review weaker modules before moving on.")
-                else:           st.error("❌ **Needs more practice** — revisit with a lower difficulty.")
+                if   avg >= 80:
+                    st.success("✅ **Strong mastery** — ready to apply this knowledge.")
+                    st.markdown(f"""
+                    <div style="background:rgba(34,197,94,0.10);border:1px solid rgba(34,197,94,0.3);
+                         border-radius:12px;padding:14px 18px;margin-top:8px;">
+                      <p style="margin:0;color:#86efac;font-weight:600;">
+                        🔥 {avg}% mastery! You've genuinely learned this topic.
+                        Now take a <strong>Mock Assessment</strong> to lock it in with a score.
+                      </p>
+                    </div>""", unsafe_allow_html=True)
+                elif avg >= 60:
+                    st.warning("⚠️ **Good progress** — review weaker modules before moving on.")
+                    st.markdown(f"""
+                    <div style="background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.3);
+                         border-radius:12px;padding:14px 18px;margin-top:8px;">
+                      <p style="margin:0;color:#fcd34d;font-weight:600;">
+                        💪 {avg}% — you're building real knowledge. Revisit the red modules
+                        then try the <strong>Mock Assessment</strong>.
+                      </p>
+                    </div>""", unsafe_allow_html=True)
+                else:
+                    st.error("❌ **Needs more practice** — revisit with a lower difficulty.")
+                    st.markdown(f"""
+                    <div style="background:rgba(239,68,68,0.10);border:1px solid rgba(239,68,68,0.3);
+                         border-radius:12px;padding:14px 18px;margin-top:8px;">
+                      <p style="margin:0;color:#fca5a5;font-weight:600;">
+                        🎯 {avg}% — this topic needs more time. Drop to Beginner level and
+                        rebuild the foundation. Progress compounds quickly once it clicks.
+                      </p>
+                    </div>""", unsafe_allow_html=True)
+                # Update journey tracker
+                st.session_state.journey_step = max(st.session_state.get("journey_step", 0), 2)
 
                 st.markdown("### 📊 Module-by-Module Breakdown")
                 for i, (mod, sc) in enumerate(zip(plan[:len(final_scores)], final_scores)):
@@ -3543,6 +3711,19 @@ elif page == "🤖 AI Learning Agent":
                 with st.spinner("Generating your personalised mastery report…"):
                     report = generate_mastery_report(name_ag, topic_ag, plan, final_scores)
                 st.info(report)
+
+                # ── U-3: Next step nudge ─────────────────────────────
+                st.markdown("""
+                <div style="background:linear-gradient(90deg,rgba(99,102,241,0.15),rgba(34,197,94,0.10));
+                     border:1px solid rgba(99,102,241,0.3);border-radius:14px;padding:16px 22px;margin:16px 0;">
+                  <p style="margin:0 0 4px 0;color:#a5b4fc;font-weight:700;font-size:0.85em;
+                       text-transform:uppercase;letter-spacing:0.07em;">🗺️ What to do next</p>
+                  <p style="margin:0;color:#f1f5f9;font-weight:500;">
+                    👉 Take a <strong>🎓 Mock Assessment</strong> on this topic to get a certified score.<br>
+                    👉 Then practice with the <strong>🎤 AI Interview Simulator</strong> to build real confidence.
+                  </p>
+                </div>
+                """, unsafe_allow_html=True)
 
                 save_agent_progress({
                     "name":              name_ag,
@@ -3565,9 +3746,263 @@ elif page == "🤖 AI Learning Agent":
                 st.rerun()
 
 
+# ── U-1: First-visit nudge banner (shown once, dismissible) ──────────
+if st.session_state.get("show_start_nudge") and page != "🏠 Start Here":
+    _c1, _c2 = st.columns([5, 1])
+    with _c1:
+        st.info("👋 **First time here?** Visit **🏠 Start Here** in the sidebar for your guided 5-step journey — or dive straight in below!")
+    with _c2:
+        if st.button("✕ Dismiss", key="dismiss_nudge"):
+            st.session_state.show_start_nudge = False
+            st.rerun()
+
+
 # ══════════════════════════════════════════════════════════════════════
-# ████████████████  ADMIN PORTAL  ██████████████████████████████████████
+# ██████████████  🏠 START HERE — GUIDED ONBOARDING  ██████████████████
 # ══════════════════════════════════════════════════════════════════════
+
+if page == "🏠 Start Here":
+
+    st.session_state.current_feature = "Onboarding"
+    user_first = st.session_state.get("current_user", "there").split()[0]
+
+    # ── Hero ──────────────────────────────────────────────────────────
+    st.markdown(f"""
+    <div style="background:linear-gradient(135deg,rgba(99,102,241,0.18),rgba(34,197,94,0.10));
+         border:1px solid rgba(99,102,241,0.3);border-radius:20px;
+         padding:36px 36px 28px 36px;margin-bottom:28px;text-align:center;">
+      <div style="font-size:2.8em;margin-bottom:8px;">⚙️</div>
+      <h1 style="margin:0 0 8px 0;font-size:2em;font-weight:900;">
+        Welcome, {user_first}! 👋
+      </h1>
+      <p style="color:#94a3b8;font-size:1.05em;margin:0 0 20px 0;max-width:520px;margin-left:auto;margin-right:auto;">
+        You're 5 steps away from a clear picture of your career readiness —
+        and a personalised plan to get you hired faster.
+      </p>
+      <div style="background:rgba(255,255,255,0.06);border-radius:12px;
+           padding:14px 24px;display:inline-block;">
+        <span style="color:#a5b4fc;font-weight:700;font-size:0.9em;">
+          ⏱️ Takes about 10 minutes &nbsp;·&nbsp; 🆓 Completely free &nbsp;·&nbsp; 🤖 AI-powered
+        </span>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Guided 5-step flow ────────────────────────────────────────────
+    st.markdown("### 🗺️ Your 5-Step Career Blueprint")
+    st.caption("Follow these in order — each step builds on the last.")
+    st.markdown("")
+
+    STEPS = [
+        {
+            "num": "01", "icon": "📊", "title": "Analyze Your Skills",
+            "desc": "Enter your skills → get your Career Score, domain, and role fit instantly.",
+            "action": "🔎 Skill Intelligence", "cta": "Start Analysis →",
+            "time": "2 min", "tag": "Most important first step",
+            "color": "#6366f1",
+        },
+        {
+            "num": "02", "icon": "🔍", "title": "See Your Skill Gaps",
+            "desc": "Find exactly which skills are missing for your target role — with priority ranking.",
+            "action": "🤖 AI Career Copilot", "cta": "See My Gaps →",
+            "time": "2 min", "tag": "Know what to fix",
+            "color": "#3b82f6",
+        },
+        {
+            "num": "03", "icon": "📚", "title": "Close the Gaps",
+            "desc": "AI teaches you the missing skills module by module — with quizzes after each lesson.",
+            "action": "🤖 AI Learning Agent", "cta": "Start Learning →",
+            "time": "20–30 min/day", "tag": "Daily habit",
+            "color": "#f59e0b",
+        },
+        {
+            "num": "04", "icon": "🎓", "title": "Test Your Knowledge",
+            "desc": "Take a mock assessment on your skills — get scored and see where you stand.",
+            "action": "🎓 Mock Assessment", "cta": "Take Test →",
+            "time": "10 min", "tag": "Benchmark yourself",
+            "color": "#22c55e",
+        },
+        {
+            "num": "05", "icon": "🎤", "title": "Practice Interviews",
+            "desc": "5-round AI mock interview with real-time scoring and a written debrief.",
+            "action": "🎤 AI Interview Simulator", "cta": "Start Interview →",
+            "time": "15 min", "tag": "Build confidence",
+            "color": "#ec4899",
+        },
+    ]
+
+    for s in STEPS:
+        col_step, col_btn = st.columns([5, 1])
+        with col_step:
+            st.markdown(f"""
+            <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);
+                 border-left:4px solid {s['color']};border-radius:0 14px 14px 0;
+                 padding:16px 20px;margin-bottom:10px;display:flex;align-items:flex-start;gap:16px;">
+              <div style="min-width:44px;text-align:center;">
+                <div style="font-size:1.5em;">{s['icon']}</div>
+                <div style="color:{s['color']};font-weight:900;font-size:0.75em;
+                     letter-spacing:0.06em;margin-top:2px;">STEP {s['num']}</div>
+              </div>
+              <div>
+                <div style="font-weight:700;font-size:1em;color:#f1f5f9;margin-bottom:3px;">
+                  {s['title']}
+                  <span style="background:rgba(255,255,255,0.07);color:#94a3b8;
+                       font-size:0.7em;font-weight:500;padding:2px 8px;
+                       border-radius:10px;margin-left:8px;">{s['tag']}</span>
+                </div>
+                <div style="color:#94a3b8;font-size:0.88em;">{s['desc']}</div>
+                <div style="color:{s['color']};font-size:0.75em;font-weight:600;
+                     margin-top:4px;">⏱ {s['time']}</div>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+        with col_btn:
+            st.markdown("<br><br>", unsafe_allow_html=True)
+            if st.button(s["cta"], key=f"step_btn_{s['num']}", use_container_width=True):
+                st.session_state.go_to_page = s["action"]
+                st.rerun()
+
+    # Handle navigation from step buttons
+    if st.session_state.get("go_to_page"):
+        target = st.session_state.pop("go_to_page")
+        st.info(f"👉 Click **{target}** in the sidebar to continue.")
+
+    st.markdown("")
+    st.divider()
+
+    # ── Quick-start shortcut ──────────────────────────────────────────
+    st.markdown("### ⚡ Quick Start — Get Your Career Score in 60 Seconds")
+    st.caption("Just enter your skills below and we'll do everything else.")
+
+    qs_name   = st.text_input("Your Name", value=st.session_state.get("current_user",""),
+                               key="qs_name", placeholder="e.g. Arjun Sharma")
+    qs_role   = st.text_input("Your Target Role", key="qs_role",
+                               placeholder="e.g. Data Analyst, Backend Developer, Product Manager")
+    qs_skills = st.text_input("Your Current Skills (comma-separated)", key="qs_skills",
+                               placeholder="e.g. Python, SQL, Excel, Power BI…")
+    qs_edu    = st.text_input("Education Level", key="qs_edu",
+                               placeholder="e.g. B.Tech, MBA, 12th Grade, Self-taught")
+
+    if st.button("🚀 Get My Career Score", use_container_width=True, key="qs_go"):
+        if not qs_name or not qs_role or not qs_skills:
+            st.warning("⚠️ Please fill in Name, Target Role, and at least one Skill.")
+        else:
+            if not check_request_limit(): st.stop()
+            skills_qs = normalize_skills(qs_skills)
+            if not skills_qs:
+                st.warning("⚠️ No valid skills detected. Try: python, sql, excel"); st.stop()
+
+            st.session_state.current_user = qs_name.strip()
+
+            with st.spinner("🧠 Analyzing your profile…"):
+                domain_qs = detect_domain_cached(tuple(skills_qs)) or "Technology"
+                role_qs   = infer_role_cached(tuple(skills_qs), domain_qs) or qs_role
+                gaps_qs   = detect_skill_gaps_cached(tuple(skills_qs), qs_role, domain_qs)
+                conf_qs   = generate_confidence(role_qs, domain_qs, qs_edu)
+
+            # Parse confidence
+            cv = 70
+            if isinstance(conf_qs, str):
+                m = re.search(r"(\d+)%", conf_qs)
+                if m: cv = int(m.group(1))
+
+            have_count    = len([g for g in gaps_qs if g.get("status") == "Have"])
+            total_gaps    = max(len(gaps_qs), 1)
+            coverage_pct  = round(have_count / total_gaps * 100)
+            skill_score   = min(len(skills_qs) * 5, 30)
+            gap_score     = round(coverage_pct / 100 * 30)
+            market_score  = round(cv / 100 * 40)
+            career_score  = min(skill_score + gap_score + market_score, 100)
+
+            critical_gaps = [g["skill"] for g in gaps_qs
+                             if g.get("status") in ("Missing","Partial")
+                             and g.get("priority") == "Critical"][:3]
+
+            # Store for guided flow
+            st.session_state.qs_result = {
+                "name": qs_name, "role": qs_role, "domain": domain_qs,
+                "skills": skills_qs, "education": qs_edu,
+                "career_score": career_score, "coverage": coverage_pct,
+                "critical_gaps": critical_gaps, "skill_count": len(skills_qs),
+            }
+            st.session_state.journey_step = 1
+            st.rerun()
+
+    # ── Career Score Result Card ──────────────────────────────────────
+    if st.session_state.get("qs_result"):
+        r = st.session_state.qs_result
+        cs = r["career_score"]
+
+        # Colour + emotional label
+        if cs >= 80:
+            clr, emoji, label = "#22c55e", "🔥", "You're job-ready! Start applying now."
+        elif cs >= 65:
+            clr, emoji, label = "#3b82f6", "💪", f"Almost there! Close {len(r['critical_gaps'])} gaps and you're set."
+        elif cs >= 45:
+            clr, emoji, label = "#f59e0b", "⚡", f"Good foundation. {len(r['critical_gaps'])} critical skills to learn."
+        else:
+            clr, emoji, label = "#ef4444", "🎯", "Great starting point. Let's build your skills step by step."
+
+        st.markdown(f"""
+        <div style="background:linear-gradient(135deg,rgba(99,102,241,0.15),rgba(34,197,94,0.08));
+             border:2px solid {clr};border-radius:20px;padding:28px 32px;margin-top:20px;text-align:center;">
+          <p style="color:#94a3b8;font-size:0.85em;margin:0 0 4px 0;text-transform:uppercase;letter-spacing:0.1em;font-weight:600;">
+            Career Readiness Score
+          </p>
+          <div style="font-size:4.5em;font-weight:900;color:{clr};line-height:1;margin:4px 0;">
+            {cs}%
+          </div>
+          <p style="color:#f1f5f9;font-size:1.05em;font-weight:600;margin:8px 0 4px 0;">
+            {emoji} {label}
+          </p>
+          <p style="color:#64748b;font-size:0.82em;margin:0;">
+            {r['name']} · {r['role']} · {r['domain']}
+          </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("")
+        c1, c2, c3 = st.columns(3)
+        with c1: st.metric("✅ Skills You Have",    f"{r['skill_count']}")
+        with c2: st.metric("📊 Role Coverage",       f"{r['coverage']}%")
+        with c3: st.metric("🔴 Critical Gaps",       f"{len(r['critical_gaps'])}")
+
+        if r["critical_gaps"]:
+            st.markdown("")
+            st.markdown("**🎯 Your 3 most important skills to learn right now:**")
+            gap_cols = st.columns(len(r["critical_gaps"]))
+            for i, gap in enumerate(r["critical_gaps"]):
+                with gap_cols[i]:
+                    st.markdown(
+                        f'<div style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);'
+                        f'border-radius:10px;padding:10px;text-align:center;">'
+                        f'<p style="color:#fca5a5;font-weight:700;margin:0;font-size:0.9em;">⚠ {gap}</p></div>',
+                        unsafe_allow_html=True,
+                    )
+
+        st.markdown("")
+        st.success("✅ **Your Career Score is ready!** Here's what to do next:")
+
+        n1, n2, n3 = st.columns(3)
+        with n1:
+            st.markdown("**Step 2 →**")
+            st.markdown("Go to **🤖 AI Career Copilot** for your full personalised weekly plan")
+        with n2:
+            st.markdown("**Step 3 →**")
+            st.markdown(f"Go to **🤖 AI Learning Agent** and study: **{r['critical_gaps'][0] if r['critical_gaps'] else 'your top skill'}**")
+        with n3:
+            st.markdown("**Step 4 →**")
+            st.markdown("Take a **🎓 Mock Assessment** to benchmark your current level")
+
+        if st.button("🗑️ Clear & Start Over", key="qs_clear"):
+            st.session_state.pop("qs_result", None)
+            st.session_state.journey_step = 0
+            st.rerun()
+
+
+# ── Job Finder alias (old name compatibility) ─────────────────────────
+elif page == "💼 AI Job Finder (Premium)":
+    page = "💼 AI Job Finder"
 
 elif page == "🔐 Admin Portal":
 
